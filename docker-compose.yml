@@ -1,0 +1,121 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with pgvector and TimescaleDB
+  postgres:
+    image: ankane/pgvector:latest
+    container_name: deriv-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    # ports:
+    #   - "5434:5432"  # Only accessible within Docker network
+    networks:
+      - deriv-network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 4g
+    cpus: 2
+
+  # Redis for caching and state management
+  redis:
+    image: redis:7-alpine
+    container_name: deriv-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    # ports:
+    #   - "6381:6379"  # Only accessible within Docker network
+    networks:
+      - deriv-network
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 512m
+
+  # Data Feeder Service (Continuous Ingestion)
+  data-feeder:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: deriv-feeder
+    restart: unless-stopped
+    command: python -m app.feeder
+    env_file:
+      - .env
+    volumes:
+      - ./backend:/app
+      - /var/log/deriv-bot:/var/log/deriv-bot
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - deriv-network
+    mem_limit: 1g
+    cpus: 1
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: deriv-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./backend:/app
+      - /var/log/deriv-bot:/var/log/deriv-bot
+    ports:
+      - "8001:8000" # Changed to 8001 to avoid potential conflicts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      data-feeder:
+        condition: service_started
+    networks:
+      - deriv-network
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    mem_limit: 4g
+    cpus: 2
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  deriv-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
