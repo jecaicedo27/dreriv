@@ -4,7 +4,7 @@ API Routes for Bot Status and Trading Data
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from app.core.database import get_db
 from app.core.config import get_settings
@@ -68,7 +68,19 @@ async def get_bot_status(db: Session = Depends(get_db)):
             "wins_today": bot_state.wins_today,
             "losses_today": bot_state.losses_today,
             "last_updated": bot_state.updated_at.isoformat() if bot_state.updated_at else None,
-            "account_type": settings.DERIV_ACCOUNT_TYPE.upper()
+            "account_type": settings.DERIV_ACCOUNT_TYPE.upper(),
+            "cooldown_until": bot_state.cooldown_until.isoformat() if bot_state.cooldown_until else None,
+            "cooldown_reason": bot_state.cooldown_reason,
+            
+            # Risk management info
+            "risk": {
+                "peak_balance": float(bot_state.peak_balance) if bot_state.peak_balance else float(bot_state.balance),
+                "drawdown_pct": round(float(bot_state.current_drawdown_pct), 1) if bot_state.current_drawdown_pct else 0.0,
+                "max_drawdown_limit": settings.MAX_DRAWDOWN_PCT,
+                "is_blocked": float(bot_state.current_drawdown_pct or 0) >= settings.MAX_DRAWDOWN_PCT,
+                "consecutive_losses": bot_state.losses_consecutive or 0,
+                "cooldown_active": bot_state.cooldown_until > datetime.now(timezone.utc) if bot_state.cooldown_until else False
+            }
         }
 
         # Fetch latest Layer 2 analysis
@@ -79,8 +91,11 @@ async def get_bot_status(db: Session = Depends(get_db)):
             import json
             try:
                 reasoning_json = json.loads(latest_l2.reasoning) if latest_l2.reasoning else {}
-                # Extract summary from reasoning chain (usually step 6 or 7)
-                summary = reasoning_json.get('step6_final_decision_rationale', 'No summary available')
+                # Extract summary from reasoning chain (try step 6 or 7)
+                summary = reasoning_json.get('step6_decision_rationale') or \
+                          reasoning_json.get('step6_final_decision_rationale') or \
+                          reasoning_json.get('step7_confidence_justification') or \
+                          'No summary available'
             except:
                 summary = "Reasoning parsing failed"
 
@@ -105,6 +120,46 @@ async def get_bot_status(db: Session = Depends(get_db)):
         return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching bot status: {str(e)}")
+
+
+@router.post("/reset-risk")
+async def reset_risk_state(db: Session = Depends(get_db)):
+    """
+    Reset risk management state:
+    - Peak balance → current balance (clears drawdown)
+    - Consecutive losses → 0
+    - Cooldown cleared
+    - Daily PnL → 0
+    """
+    try:
+        bot_state = db.query(BotState).filter(BotState.id == 1).first()
+        if not bot_state:
+            raise HTTPException(status_code=404, detail="Bot state not found")
+        
+        old_drawdown = float(bot_state.current_drawdown_pct or 0)
+        old_peak = float(bot_state.peak_balance or 0)
+        
+        bot_state.peak_balance = bot_state.balance
+        bot_state.current_drawdown_pct = 0.0
+        bot_state.losses_consecutive = 0
+        bot_state.cooldown_until = None
+        bot_state.cooldown_reason = None
+        bot_state.daily_pnl = 0
+        bot_state.trades_today = 0
+        bot_state.wins_today = 0
+        bot_state.losses_today = 0
+        db.commit()
+        
+        return {
+            "status": "ok",
+            "message": "Risk state reset successfully",
+            "old_peak": old_peak,
+            "new_peak": float(bot_state.balance),
+            "old_drawdown": round(old_drawdown, 1),
+            "new_drawdown": 0.0
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error resetting risk state: {str(e)}")
 
 
 @router.get("/candles")
@@ -132,6 +187,76 @@ async def get_candles(limit: int = 200, db: Session = Depends(get_db)):
         ]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching candles: {str(e)}")
+
+
+@router.get("/historical-candles")
+async def get_historical_candles(limit: int = 500, db: Session = Depends(get_db)):
+    """
+    Get historical candles for backtesting simulation chart
+    """
+    try:
+        from sqlalchemy import text
+        
+        # Query historical_candles table directly
+        query = text("""
+            SELECT open_time, open, high, low, close, volume
+            FROM historical_candles
+            ORDER BY open_time DESC
+            LIMIT :limit
+        """)
+        
+        result = db.execute(query, {"limit": limit})
+        candles = result.fetchall()
+        
+        # Reverse to chronological order and format
+        candles_list = [
+            {
+                "time": int(row[0].timestamp()),
+                "open": float(row[1]),
+                "high": float(row[2]),
+                "low": float(row[3]),
+                "close": float(row[4]),
+                "volume": int(row[5]) if row[5] else 0
+            }
+            for row in reversed(candles)
+        ]
+        
+        return candles_list
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching historical candles: {str(e)}")
+
+
+@router.get("/analysis-history")
+async def get_analysis_history(limit: int = 300, db: Session = Depends(get_db)):
+    """
+    Get historical analysis data for chart indicators overlay
+    Returns last N analysis records for visualization
+    """
+    try:
+        from app.models.models import AnalysisHistory
+        
+        records = db.query(AnalysisHistory)\
+            .order_by(AnalysisHistory.timestamp.desc())\
+            .limit(limit)\
+            .all()
+        
+        # Reverse to chronological order and format for chart
+        return [{
+            "time": int(r.timestamp.timestamp()),
+            "hurst": float(r.hurst_value) if r.hurst_value else 0.5,
+            "hurst_regime": r.hurst_regime,
+            "ou_deviation": float(r.ou_deviation) if r.ou_deviation else 0,
+            "ou_signal": r.ou_signal,
+            "signal": r.final_signal,
+            "confidence": float(r.final_confidence) if r.final_confidence else 0,
+            "duration": r.duration,
+            "price": float(r.current_price) if r.current_price else 0
+        } for r in reversed(records)]
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching analysis history: {str(e)}")
+
+
 
 
 @router.get("/trades")

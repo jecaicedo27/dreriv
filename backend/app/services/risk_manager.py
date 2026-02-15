@@ -4,7 +4,7 @@ Implements comprehensive risk controls for the trading bot
 
 Based on skill: trading-risk-management
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -70,13 +70,20 @@ class RiskManager:
         
         # Check cooldown
         if self.bot_state.cooldown_until:
-            if datetime.now() < self.bot_state.cooldown_until:
-                remaining = (self.bot_state.cooldown_until - datetime.now()).total_seconds() / 60
+            if datetime.now(timezone.utc) < self.bot_state.cooldown_until:
+                remaining = (self.bot_state.cooldown_until - datetime.now(timezone.utc)).total_seconds() / 60
                 return {
                     'allowed': False,
-                    'reason': f'In cooldown for {remaining:.1f} more minutes - {self.bot_state.cooldown_reason}',
+                    'reason': f'Cooldown: faltan {remaining:.0f}min - {self.bot_state.cooldown_reason}',
                     'severity': 'INFO'
                 }
+            else:
+                # Cooldown expired — auto-clear everything
+                logger.info(f"✅ Cooldown expirado — reseteando estado de riesgo")
+                self.bot_state.cooldown_until = None
+                self.bot_state.cooldown_reason = None
+                self.bot_state.losses_consecutive = 0
+                self.db.commit()
         
         # Check daily loss limit
         daily_loss_pct = abs(self.bot_state.daily_pnl / self.bot_state.balance * 100) if self.bot_state.balance > 0 else 0
@@ -98,15 +105,36 @@ class RiskManager:
         
         # Check consecutive losses
         if self.bot_state.losses_consecutive >= settings.COOLDOWN_AFTER_LOSSES:
-            self._activate_cooldown(
-                minutes=settings.COOLDOWN_MINUTES,
-                reason=f'{self.bot_state.losses_consecutive} consecutive losses'
-            )
-            return {
-                'allowed': False,
-                'reason': f'Cooldown activated after {self.bot_state.losses_consecutive} consecutive losses',
-                'severity': 'WARNING'
-            }
+            # Check if enough time has passed since last trade (natural cooldown)
+            # If 15+ min passed, the dangerous zone is over — reset and let bot trade
+            from app.models.models import Trade
+            last_trade = self.db.query(Trade).order_by(Trade.entry_time.desc()).first()
+            
+            if last_trade and last_trade.entry_time:
+                time_since_last = (datetime.now(timezone.utc) - last_trade.entry_time.replace(tzinfo=timezone.utc)).total_seconds() / 60
+                
+                if time_since_last >= settings.COOLDOWN_MINUTES:
+                    # Natural cooldown passed — reset counter, allow trading
+                    logger.info(f"🔄 {time_since_last:.0f}min since last trade — resetting {self.bot_state.losses_consecutive} consecutive losses")
+                    self.bot_state.losses_consecutive = 0
+                    self.db.commit()
+                    # Fall through to allow trading
+                else:
+                    # Still in dangerous zone — activate formal cooldown
+                    remaining = settings.COOLDOWN_MINUTES - time_since_last
+                    self._activate_cooldown(
+                        minutes=int(remaining),
+                        reason=f'{self.bot_state.losses_consecutive} consecutive losses'
+                    )
+                    return {
+                        'allowed': False,
+                        'reason': f'Cooldown: {self.bot_state.losses_consecutive} losses consecutivos, faltan {remaining:.0f}min',
+                        'severity': 'WARNING'
+                    }
+            else:
+                # No trade history — just reset
+                self.bot_state.losses_consecutive = 0
+                self.db.commit()
         
         # Check daily trade limit
         if self.bot_state.trades_today >= settings.MAX_TRADES_PER_DAY:
@@ -125,10 +153,61 @@ class RiskManager:
     
     def _activate_cooldown(self, minutes: int, reason: str):
         """Activate cooldown period"""
-        self.bot_state.cooldown_until = datetime.now() + timedelta(minutes=minutes)
+        self.bot_state.cooldown_until = datetime.now(timezone.utc) + timedelta(minutes=minutes)
         self.bot_state.cooldown_reason = reason
+        # Reset consecutive losses to break the infinite loop
+        self.bot_state.losses_consecutive = 0
         self.db.commit()
         logger.warning(f"⏸️ Cooldown activated for {minutes} minutes: {reason}")
+    
+    def get_dynamic_confidence_threshold(self) -> float:
+        """
+        Get dynamic confidence threshold based on consecutive losses
+        Increases required confidence after losses to be more selective
+        
+        Returns:
+            Minimum confidence threshold (0.70 - 0.80)
+        """
+        base_threshold = 0.70
+        consecutive_losses = self.bot_state.losses_consecutive
+        
+        if consecutive_losses >= 4:
+            # After 4 losses, require very high confidence
+            return 0.80
+        elif consecutive_losses >= 3:
+            # After 3 losses, require high confidence  
+            return 0.75
+        elif consecutive_losses >= 2:
+            # After 2 losses, slightly increase threshold
+            return 0.73
+        
+        return base_threshold
+    
+    def detect_regime_change(self, recent_outcomes: list) -> bool:
+        """
+        Detect potential market regime shifts
+        Pattern: WWW → LL suggests trend reversal
+        
+        Args:
+            recent_outcomes: List of recent trade outcomes ['WIN', 'LOSS', ...]
+        
+        Returns:
+            True if regime change detected
+        """
+        if len(recent_outcomes) < 5:
+            return False
+        
+        # Check for winning streak followed by losses
+        # Pattern: [WIN, WIN, WIN, LOSS, LOSS]
+        if (recent_outcomes[0] == 'WIN' and
+            recent_outcomes[1] == 'WIN' and  
+            recent_outcomes[2] == 'WIN' and
+            recent_outcomes[3] == 'LOSS' and
+            recent_outcomes[4] == 'LOSS'):
+            logger.warning("🔄 Regime change detected: WWW→LL pattern")
+            return True
+        
+        return False
     
     def get_drawdown_multiplier(self) -> float:
         """
@@ -212,6 +291,6 @@ class RiskManager:
             'wins_today': self.bot_state.wins_today,
             'losses_today': self.bot_state.losses_today,
             'losses_consecutive': self.bot_state.losses_consecutive,
-            'in_cooldown': self.bot_state.cooldown_until > datetime.now() if self.bot_state.cooldown_until else False,
+            'in_cooldown': self.bot_state.cooldown_until > datetime.now(timezone.utc) if self.bot_state.cooldown_until else False,
             'trading_enabled': self.bot_state.is_trading_enabled
         }

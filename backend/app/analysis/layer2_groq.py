@@ -60,6 +60,17 @@ class Layer2GroqEngine:
             # Apply meta-confidence adjustment
             groq_decision = self._apply_meta_confidence(groq_decision)
             
+            # Groq is the FINAL decision maker
+            # L1 warnings (RSI, momentum, etc.) are in the reasoning text that Groq reads
+            # No guard needed — Groq has its own safeguards (counter-arguments, meta-confidence)
+            l1_signal = layer1_signal.get('final_signal', 'HOLD')
+            groq_sig = groq_decision.get('decision', 'HOLD')
+            groq_conf = groq_decision.get('confidence', 0.0)
+            
+            if l1_signal != groq_sig:
+                logger.info(f"🔄 Groq overrides L1: L1={l1_signal} → Groq={groq_sig} (conf={groq_conf:.2f})")
+            
+            
             # Merge with Layer 1 for logging
             final_decision = self._merge_decisions(layer1_signal, groq_decision)
             
@@ -68,20 +79,37 @@ class Layer2GroqEngine:
                 try:
                     from app.models.models import GroqDecisionLog
                     import json
+                    import math
+                    
+                    def sanitize_for_json(obj):
+                        """Recursively replace Infinity/NaN with None for JSON compliance"""
+                        if isinstance(obj, float):
+                            if math.isinf(obj) or math.isnan(obj):
+                                return None
+                            return obj
+                        elif isinstance(obj, dict):
+                            return {k: sanitize_for_json(v) for k, v in obj.items()}
+                        elif isinstance(obj, list):
+                            return [sanitize_for_json(v) for v in obj]
+                        return obj
+                    
+                    # Sanitize inputs
+                    safe_l1 = sanitize_for_json(layer1_signal)
+                    safe_groq = sanitize_for_json(groq_decision)
                     
                     log_entry = GroqDecisionLog(
-                        layer1_signals=layer1_signal,
+                        layer1_signals=safe_l1,
                         layer2_patterns={}, # Placeholder
                         market_context={"text": market_context},
-                        groq_raw_response=json.dumps(groq_decision),
-                        groq_parsed_decision=groq_decision,
+                        groq_raw_response=json.dumps(safe_groq),
+                        groq_parsed_decision=safe_groq,
                         decision=final_decision['decision'],
                         confidence=final_decision['confidence'],
-                        reasoning=json.dumps(groq_decision.get('reasoning_chain', {})),
-                        counter_arguments=json.dumps(groq_decision.get('reasoning_chain', {}).get('step5_counter_arguments', [])),
-                        meta_confidence_score=groq_decision.get('_meta', {}).get('trust_multiplier', 0.5),
-                        response_time_ms=groq_decision.get('_meta', {}).get('response_time_ms', 0),
-                        tokens_used=groq_decision.get('_meta', {}).get('tokens_used', 0)
+                        reasoning=json.dumps(safe_groq.get('reasoning_chain', {})),
+                        counter_arguments=json.dumps(safe_groq.get('reasoning_chain', {}).get('step5_counter_arguments', [])),
+                        meta_confidence_score=safe_groq.get('_meta', {}).get('trust_multiplier', 0.5),
+                        response_time_ms=safe_groq.get('_meta', {}).get('response_time_ms', 0),
+                        tokens_used=safe_groq.get('_meta', {}).get('tokens_used', 0)
                     )
                     
                     db.add(log_entry)
@@ -89,13 +117,15 @@ class Layer2GroqEngine:
                     logger.info("💾 Saved Layer 2 decision to DB")
                     
                 except Exception as e:
+                    db.rollback()
                     logger.error(f"❌ Failed to save Groq log to DB: {e}")
             
             logger.info(
                 f"✅ Layer 2 final: {final_decision['decision']} "
                 f"(L1: {layer1_signal.get('final_signal', 'N/A')}, "
                 f"Groq: {groq_decision['decision']}, "
-                f"conf: {final_decision['confidence']:.2f})"
+                f"conf: {final_decision['confidence']:.2f}, "
+                f"duration: {final_decision.get('duration', 'N/A')}s)"
             )
             
             return final_decision
@@ -145,13 +175,16 @@ class Layer2GroqEngine:
         
         # Recent price action
         recent_candles = ""
-        if candles and len(candles) >= 3:
-            recent = candles[-3:]
-            recent_candles = f"\nRecent 3 candles:\n"
+        recent_candles = ""
+        if candles:
+            # Use up to 25 candles for better trend context
+            recent = candles[-25:]
+            recent_candles = f"\nRecent {len(recent)} candles (1min timeframe):\n"
             for i, c in enumerate(recent, 1):
                 try:
                     direction = "🟢" if float(c.close) > float(c.open) else "🔴"
-                    recent_candles += f"  {direction} Candle {i}: O={c.open} H={c.high} L={c.low} C={c.close}\n"
+                    # Compact format: Dir O H L C
+                    recent_candles += f"{direction} #{i}: O{float(c.open):.2f} H{float(c.high):.2f} L{float(c.low):.2f} C{float(c.close):.2f}\n"
                 except Exception:
                     pass
         
@@ -245,11 +278,14 @@ class Layer2GroqEngine:
         merged['layer1_confidence'] = layer1.get('final_confidence')
         merged['layer1_reason'] = layer1.get('reasoning')
         
-        # Overwrite with Groq decision
+        # 🚀 FULL_CONTROL MODE: Groq can create trades independently
+        # (VETO_ONLY mode disabled - Groq not restricted by Layer 1 HOLD)
         merged['final_signal'] = groq['decision']
         merged['final_confidence'] = groq['confidence']
-        merged['decision'] = groq['decision'] # Keep 'decision' for legacy/logging check
-        merged['confidence'] = groq['confidence'] # Required for DB logging in analyze()
+        merged['decision'] = groq['decision']
+        merged['confidence'] = groq['confidence']
+        
+        # Handle reasoning (convert dict to summary string for legacy compatibility)
         
         # Handle reasoning (convert dict to summary string for legacy compatibility)
         if isinstance(groq.get('reasoning_chain'), dict):

@@ -62,8 +62,8 @@ class KellyCriterion:
         # Apply fractional Kelly (typically 0.25 = quarter Kelly)
         fractional_kelly = kelly * kelly_fraction
         
-        # Clamp to 0-20% of bankroll (safety limit)
-        fractional_kelly = max(0.0, min(0.20, fractional_kelly))
+        # Clamp to 0-1.3% of bankroll (target: 1.3% per trade)
+        fractional_kelly = max(0.0, min(0.013, fractional_kelly))
         
         logger.debug(f"Kelly: p={p:.3f}, b={b:.2f} → f*={kelly:.4f} → fractional={fractional_kelly:.4f}")
         
@@ -75,10 +75,11 @@ class KellyCriterion:
         win_probability: float,
         payout_ratio: float = 0.95,
         min_stake: float = 0.35,
-        max_stake: float = 100.0
+        max_stake: float = None
     ) -> float:
         """
         Calculate actual stake amount in currency
+        Stake targets ~5% of balance per trade.
         
         Args:
             balance: Current account balance
@@ -95,6 +96,10 @@ class KellyCriterion:
         
         # Calculate stake
         stake = balance * kelly_frac
+        
+        # Dynamic max: 1.3% of balance
+        if max_stake is None:
+            max_stake = balance * 0.013
         
         # Apply min/max limits
         stake = max(min_stake, min(max_stake, stake))

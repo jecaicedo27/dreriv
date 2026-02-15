@@ -12,6 +12,8 @@ import os
 from app.core.config import get_settings
 from app.core.logging import setup_logging
 from app.core.database import engine, Base
+from app.bot import TradingBot
+import asyncio
 
 # Initialize settings and logging
 settings = get_settings()
@@ -30,8 +32,13 @@ async def lifespan(app: FastAPI):
     logger.info(f"🤖 Groq Layer 2 Enabled: {settings.USE_GROQ_LAYER2}")
     logger.info(f"🔍 pgvector Enabled: {settings.ENABLE_PGVECTOR}")
     
-    # Create tables (for initial setup, later use Alembic migrations)
-    # Base.metadata.create_all(bind=engine)
+    # Initialize bot
+    bot = TradingBot()
+    app.state.bot = bot
+    
+    # Start bot in background
+    logger.info("🎬 Spawning bot background task...")
+    asyncio.create_task(bot.start())
     
     logger.success("✅ Application started successfully")
     
@@ -39,6 +46,8 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.warning("⏸️  Shutting down application...")
+    if hasattr(app.state, "bot"):
+        await app.state.bot.stop()
     logger.success("✅ Application shutdown complete")
 
 
@@ -75,7 +84,14 @@ async def serve_dashboard():
     """Serve the dashboard HTML"""
     dashboard_path = os.path.join(static_dir, "dashboard.html")
     if os.path.exists(dashboard_path):
-        return FileResponse(dashboard_path)
+        return FileResponse(
+            dashboard_path,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
     return {"error": "Dashboard not found", "path": dashboard_path}
 
 
@@ -112,7 +128,9 @@ async def root():
 # ============================================
 
 from app.api import bot_status
+from app.api import analysis_metrics
 app.include_router(bot_status.router, prefix="/api", tags=["bot"])
+app.include_router(analysis_metrics.router, prefix="/api", tags=["analysis"])
 
 
 if __name__ == "__main__":

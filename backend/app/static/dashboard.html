@@ -3,6 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
+    <!-- Version: 2.0 - Hurst Separate Panel Update @ 2026-02-10 01:07 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -22,7 +23,7 @@
             background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
             color: #e0e0e0;
             min-height: 100vh;
-            padding: 20px;
+            padding: 10px;
         }
 
         .container {
@@ -32,7 +33,7 @@
 
         header {
             text-align: center;
-            margin-bottom: 40px;
+            margin-bottom: 15px;
         }
 
         h1 {
@@ -52,6 +53,23 @@
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 1px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        #debugLog {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #0f0;
+            padding: 10px;
+            border: 1px solid #0f0;
+            font-family: monospace;
+            z-index: 9999;
+            max-width: 300px;
+            font-size: 10px;
         }
 
         .status-running {
@@ -70,7 +88,7 @@
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 20px;
-            margin-bottom: 30px;
+            margin-bottom: 15px;
         }
 
         .card {
@@ -78,7 +96,7 @@
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 16px;
-            padding: 24px;
+            padding: 16px;
             transition: transform 0.3s, box-shadow 0.3s;
         }
 
@@ -212,6 +230,99 @@
                     style="display: none; border-color: #fbbf24; color: #fbbf24; background: rgba(251, 191, 36, 0.1);">Checking...</span>
                 <span id="statusBadge" class="status-badge status-running">● LOADING...</span>
             </div>
+
+            <!-- Analysis Metrics Panel -->
+            <div class="trades-table" style="margin-top: 30px;">
+                <h2 style="margin-bottom: 20px; color: #fff;">🔬 Live Analysis Metrics</h2>
+
+                <div
+                    style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 20px;">
+                    <!-- Hurst Exponent -->
+                    <div class="card" style="padding: 20px;">
+                        <h3 style="margin-top: 0; color: #00ffaa;">Hurst Exponent</h3>
+                        <div id="hurstValue" style="font-size: 32px; font-weight: bold; color: #fff;">-</div>
+                        <div id="hurstRegime"
+                            style="margin-top: 10px; padding: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; text-align: center;">
+                            -</div>
+                        <div style="margin-top: 10px;">
+                            <div class="text-xs text-slate-400 mt-2">
+                                <span class="block">📊 Interpretación:</span>
+                                <span class="block">• &lt;0.45: Mercado tiende a <span class="text-blue-400">revertir a
+                                        la media</span></span>
+                                <span class="block">• 0.45-0.65: Movimiento <span class="text-yellow-400">aleatorio /
+                                        débil</span></span>
+                                <span class="block">• &gt;0.65: Mercado en <span class="text-green-400">tendencia fuerte
+                                        (Confirmada)</span></span>
+                            </div>
+                        </div>
+                        <div id="hurstUpdated"
+                            style="margin-top: 8px; font-size: 12px; color: #fff; text-align: right;">⏱ --:--:--
+                        </div>
+                    </div>
+                </div>
+                <!-- Indicators Area -->
+                <div class="grid grid-cols-1 gap-4 mb-4">
+                    <!-- Hurst Chart -->
+                    <div class="card" style="padding: 20px;">
+                        <h3 style="margin-top: 0; color: #00ffaa;">O-U Deviation</h3>
+                        <div id="ouDeviation" style="font-size: 32px; font-weight: bold; color: #fff;">-</div>
+                        <div id="ouSignal"
+                            style="margin-top: 10px; padding: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; text-align: center;">
+                            -</div>
+                        <div style="margin-top: 10px; font-size: 11px; color: #888; line-height: 1.4;">
+                            📊 <strong>Interpretación:</strong><br>
+                            • <2σ: Precio cerca del equilibrio (<span style="color: #60a5fa;">NORMAL</span>)<br>
+                                • >2σ: Precio muy alejado de la media (<span style="color: #ff4500;">EXTREMO</span>)<br>
+                                • Valores altos indican <strong>oportunidad de reversión</strong>
+                        </div>
+                        <div id="ouUpdated" style="margin-top: 8px; font-size: 12px; color: #fff; text-align: right;">⏱
+                            --:--:--</div>
+                    </div>
+                    <div class="card" style="padding: 20px; grid-column: span 1;">
+                        <h3 style="margin-top: 0; color: #fbbf24;">🌡️ Market Thermometer</h3>
+                        <div id="thermometerValue" style="font-size: 32px; font-weight: bold; color: #fff;">0%</div>
+                        <div id="thermometerStatus"
+                            style="margin-top: 10px; padding: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; text-align: center; color: #9ca3af;">
+                            😴 INDECISION
+                        </div>
+                        <div style="margin-top: 10px; font-size: 11px; color: #888; line-height: 1.4;">
+                            📊 <strong>Niveles:</strong><br>
+                            • 0-50%: <span style="color: #9ca3af;">Indecisión</span><br>
+                            • 50-70%: <span style="color: #60a5fa;">Interés</span><br>
+                            • 70-90%: <span style="color: #fbbf24;">Alistando</span><br>
+                            • 90%+: <span style="color: #10b981;">DISPARO 🚀</span>
+                        </div>
+                        <div id="thermometerUpdated"
+                            style="margin-top: 8px; font-size: 12px; color: #fff; text-align: right;">⏱ --:--:--
+                        </div>
+                    </div>
+                    <div class="card" style="padding: 20px;">
+                        <h3 style="margin-top: 0; color: #00ffaa;">Current Signal</h3>
+                        <div id="currentSignal" style="font-size: 32px; font-weight: bold; color: #fff;">-</div>
+                        <div id="signalConfidence" style="margin-top: 10px; color: #00ffaa;">Confidence: -</div>
+                        <div id="signalDuration" style="margin-top: 5px; color: #888;">Duration: -</div>
+                        <div style="margin-top: 10px; font-size: 11px; color: #888; line-height: 1.4;">
+                            📊 <strong>Interpretación:</strong><br>
+                            • <span style="color: #00ffaa;">CALL</span>: Bot predice subida de precio<br>
+                            • <span style="color: #ff4500;">PUT</span>: Bot predice bajada de precio<br>
+                            • <span style="color: #ffa500;">HOLD</span>: Condiciones no favorables para operar
+                        </div>
+                        <div id="signalUpdated"
+                            style="margin-top: 8px; font-size: 12px; color: #fff; text-align: right;">⏱ --:--:--
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Reasoning -->
+                <div class="card" style="padding: 20px;">
+                    <h3 style="margin-top: 0; color: #00ffaa;">Analysis Reasoning</h3>
+                    <div id="analysisReasoning" style="color: #ccc; line-height: 1.6;">
+                        Waiting for analysis data...
+                    </div>
+                    <div id="reasoningUpdated"
+                        style="margin-top: 8px; font-size: 12px; color: #fff; text-align: right;">⏱ --:--:--</div>
+                </div>
+            </div>
         </header>
 
         <div class="grid">
@@ -265,11 +376,85 @@
                     LAST RUN: NEVER
                 </div>
             </div>
+
+            <!-- Risk Management Panel -->
+            <div class="card" id="riskPanel"
+                style="grid-column: span 2; background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); margin-top: 0;">
+                <div class="card-title"
+                    style="color: #ef4444; display: flex; justify-content: space-between; align-items: center;">
+                    <span>🛡️ Risk Management</span>
+                    <button id="resetRiskBtn" onclick="resetRiskState()"
+                        style="background: rgba(239, 68, 68, 0.2); border: 1px solid #ef4444; color: #ef4444; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: bold; transition: all 0.2s;"
+                        onmouseover="this.style.background='rgba(239, 68, 68, 0.4)'"
+                        onmouseout="this.style.background='rgba(239, 68, 68, 0.2)'">🔄 Reset Drawdown</button>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 15px; margin-top: 10px;">
+                    <!-- Drawdown -->
+                    <div>
+                        <div style="font-size: 0.8rem; color: #9ca3af; margin-bottom: 4px;">Drawdown</div>
+                        <div id="riskDrawdown" style="font-size: 1.5rem; font-weight: bold; color: #10b981;">0.0%</div>
+                        <div
+                            style="margin-top: 6px; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden;">
+                            <div id="riskDrawdownBar"
+                                style="height: 100%; width: 0%; background: #10b981; border-radius: 3px; transition: width 0.5s;">
+                            </div>
+                        </div>
+                        <div style="font-size: 0.7rem; color: #6b7280; margin-top: 2px;">Límite: <span
+                                id="riskLimit">25</span>%</div>
+                    </div>
+                    <!-- Peak Balance -->
+                    <div>
+                        <div style="font-size: 0.8rem; color: #9ca3af; margin-bottom: 4px;">Peak Balance</div>
+                        <div id="riskPeakBalance" style="font-size: 1.5rem; font-weight: bold; color: #fff;">$0</div>
+                    </div>
+                    <!-- Consecutive Losses -->
+                    <div>
+                        <div style="font-size: 0.8rem; color: #9ca3af; margin-bottom: 4px;">Losses Consecutivos</div>
+                        <div id="riskConsecLosses" style="font-size: 1.5rem; font-weight: bold; color: #10b981;">0</div>
+                    </div>
+                    <!-- Status -->
+                    <div>
+                        <div style="font-size: 0.8rem; color: #9ca3af; margin-bottom: 4px;">Estado</div>
+                        <div id="riskStatus" style="font-size: 1.2rem; font-weight: bold; color: #10b981;">✅ Operando
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="trades-table">
-            <h2 style="margin-bottom: 20px; color: #fff;">📈 R_100 Candlestick Chart</h2>
-            <div id="chartContainer" style="height: 400px; position: relative;"></div>
+            <h2 style="margin-bottom: 20px; color: #fff;">📈 R_100 Candlestick Chart (Live Data)</h2>
+            <div id="chartContainer" style="height: 450px; position: relative;"></div>
+
+            <!-- Hurst Exponent & Confidence Thermometer Charts -->
+            <div style="display: flex; flex-direction: column; width: 100%; gap: 20px; margin-top: 15px;">
+                <div>
+                    <h3 style="margin: 0 0 5px 0; color: #ffa500; font-size: 1rem;">🔮 Hurst Exponent (Market Regime)
+                    </h3>
+                    <div style="font-size: 0.75rem; margin-bottom: 8px; color: #888;">
+                        <span style="color: #ef4444;">■ <0.45 Reversión</span> &nbsp;
+                                <span style="color: #eab308;">■ 0.45-0.65 Random</span> &nbsp;
+                                <span style="color: #10b981;">■ >0.65 Tendencia</span>
+                    </div>
+                    <div id="hurstChartContainer" style="height: 150px; position: relative; margin-bottom: 20px;"></div>
+                </div>
+                <div>
+                    <h3 style="margin: 0 0 5px 0; color: #fbbf24; font-size: 1rem;">🌡️ Confidence & Direction
+                    </h3>
+                    <div style="font-size: 0.75rem; margin-bottom: 8px; color: #888;">
+                        <span style="color: #10b981;">▲ CALL</span> &nbsp;
+                        <span style="color: #ef4444;">▼ PUT</span> &nbsp;
+                        <span style="color: #9ca3af;">— HOLD</span>
+                    </div>
+                    <div id="confidenceChartContainer" style="height: 150px; position: relative; margin-bottom: 20px;">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="trades-table" style="margin-top: 30px;">
+            <h2 style="margin-bottom: 20px; color: #fff;">📊 Historical Data Chart (For Simulation)</h2>
+            <div id="historicalChartContainer" style="height: 750px; position: relative;"></div>
         </div>
 
         <div class="trades-table">
@@ -285,13 +470,715 @@
     </div>
 
     <script>
+        console.log('🚀 DASHBOARD SCRIPT LOADED - v_1771136372_FINAL_FIX');
         const API_BASE = '/deriv/api';
         let chart = null;
         let candleSeries = null;
+        let hurstChart = null;  // Separate chart for Hurst 0-1 scale
+        let hurstLineSeries = null;
+        let historicalCandleSeries = null;
 
-        function initChart() {
+        // Pagination state
+        let currentPage = 1;
+        const tradesPerPage = 50;
+        let totalTrades = 0;
+
+        function initializeChart() {
             const container = document.getElementById('chartContainer');
             chart = LightweightCharts.createChart(container, {
+                width: container.clientWidth,
+                height: 450,
+                layout: {
+                    background: { type: 'solid', color: 'rgba(17, 24, 39, 0.5)' },
+                    textColor: '#d1d5db',
+                },
+                grid: {
+                    vertLines: { color: 'rgba(255, 255, 255, 0.1)' },
+                    horzLines: { color: 'rgba(255, 255, 255, 0.1)' },
+                },
+                crosshair: {
+                    mode: LightweightCharts.CrosshairMode.Normal,
+                },
+                rightPriceScale: {
+                    borderColor: 'rgba(255, 255, 255, 0.2)',
+                    minimumWidth: 80,
+                },
+                timeScale: {
+                    borderColor: 'rgba(255, 255, 255, 0.2)',
+                    timeVisible: true,
+                    secondsVisible: false,
+                },
+            });
+
+            candleSeries = chart.addCandlestickSeries({
+                upColor: '#00ffaa',
+                downColor: '#ff4500',
+                borderVisible: false,
+                wickUpColor: '#00ffaa',
+                wickDownColor: '#ff4500',
+            });
+
+            // Hurst display removed - shown in metrics panel instead
+
+            // O-U Deviation histogram in bottom pane (20% of chart height)
+            window.ouHistogramSeries = chart.addHistogramSeries({
+                color: '#60a5fa',
+                priceFormat: {
+                    type: 'custom',
+                    formatter: (price) => price.toFixed(2) + 'σ',
+                },
+                priceScaleId: 'ou',
+            });
+
+            // Configure O-U price scale
+            chart.priceScale('ou').applyOptions({
+                scaleMargins: {
+                    top: 0.9,    // Starts at 90% from top (bottom pane)
+                    bottom: 0,   // Ends at bottom
+                },
+                borderVisible: true,
+                borderColor: 'rgba(96, 165, 250, 0.3)',
+            });
+
+            window.addEventListener('resize', () => {
+                chart.applyOptions({ width: container.clientWidth });
+            });
+
+            // Create separate Hurst chart (0-1 scale for regime visualization)
+            const hurstContainer = document.getElementById('hurstChartContainer');
+            hurstChart = LightweightCharts.createChart(hurstContainer, {
+                width: hurstContainer.clientWidth,
+                height: 150,
+                layout: {
+                    background: { type: 'solid', color: 'rgba(17, 24, 39, 0.5)' },
+                    textColor: '#d1d5db',
+                },
+                grid: {
+                    vertLines: { color: 'rgba(255, 255, 255, 0.1)' },
+                    horzLines: { color: 'rgba(255, 255, 255, 0.1)' },
+                },
+                crosshair: {
+                    mode: LightweightCharts.CrosshairMode.Normal,
+                },
+                rightPriceScale: {
+                    borderColor: 'rgba(255, 165, 0, 0.3)',
+                    autoScale: true,
+                    minimumWidth: 80,
+                    scaleMargins: { top: 0.05, bottom: 0.05 },
+                },
+                timeScale: {
+                    borderColor: 'rgba(255, 165, 0, 0.2)',
+                    timeVisible: true,
+                    secondsVisible: false,
+                    visible: true,  // Hide time scale (will sync with main chart)
+                },
+            });
+
+            // Regime zone coloring is done per-point on the hurst line itself (see hurstData.push below)
+
+            // Add Hurst line series (on top of bands)
+            hurstLineSeries = hurstChart.addLineSeries({
+                color: '#ffa500',  // Orange
+                lineWidth: 2,
+                lastValueVisible: true,
+                priceLineVisible: true,
+            });
+            // EXPLICIT GLOBAL EXPORT
+            window.hurstLineSeries = hurstLineSeries;
+            window.hurstChart = hurstChart;
+
+            // --- CONFIDENCE THERMOMETER CHART ---
+            const confidenceContainer = document.getElementById('confidenceChartContainer');
+            window.confidenceChart = LightweightCharts.createChart(confidenceContainer, {
+                width: confidenceContainer.clientWidth,
+                height: 150,
+                layout: {
+                    background: { type: 'solid', color: 'rgba(17, 24, 39, 0.5)' },
+                    textColor: '#d1d5db',
+                },
+                grid: {
+                    vertLines: { color: 'rgba(255, 255, 255, 0.1)' },
+                    horzLines: { color: 'rgba(255, 255, 255, 0.1)' },
+                },
+                crosshair: {
+                    mode: LightweightCharts.CrosshairMode.Normal,
+                },
+                rightPriceScale: {
+                    borderColor: 'rgba(16, 185, 129, 0.3)',
+                    scaleMargins: {
+                        top: 0.1,
+                        bottom: 0.1,
+                    },
+                    visible: true,
+                    minimumWidth: 80,
+                },
+                timeScale: {
+                    borderColor: 'rgba(16, 185, 129, 0.2)',
+                    timeVisible: true,
+                    secondsVisible: false,
+                    visible: true,  // Hide time scale (will sync with main chart)
+                },
+            });
+
+            window.confidenceSeries = window.confidenceChart.addHistogramSeries({
+                color: '#60a5fa',
+                priceFormat: {
+                    type: 'custom',
+                    formatter: (price) => {
+                        const abs = Math.abs(price).toFixed(0);
+                        if (price > 0) return abs + '% CALL';
+                        if (price < 0) return abs + '% PUT';
+                        return 'HOLD';
+                    },
+                    minMove: 1,
+                },
+            });
+
+            // Add Reference Lines for confidence zones
+            // Zero line (center) and ±70 thresholds
+            const confRefZero = window.confidenceChart.addLineSeries({ color: 'rgba(255, 255, 255, 0.3)', lineWidth: 1, lineStyle: 0, lastValueVisible: false, priceLineVisible: false });
+            const confRef70 = window.confidenceChart.addLineSeries({ color: 'rgba(16, 185, 129, 0.3)', lineWidth: 1, lineStyle: 2, lastValueVisible: false, priceLineVisible: false });
+            const confRefNeg70 = window.confidenceChart.addLineSeries({ color: 'rgba(239, 68, 68, 0.3)', lineWidth: 1, lineStyle: 2, lastValueVisible: false, priceLineVisible: false });
+
+            window.confRefZero = confRefZero;
+            window.confRef70 = confRef70;
+            window.confRefNeg70 = confRefNeg70;
+
+            // --- CHART SYNCHRONIZATION (SINGLE OFFSET) ---
+            // Both Hurst and Confidence now push every candle = same bar count.
+            window._mainBarCount = 0;
+            window._indicatorBarCount = 0;
+
+            chart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+                if (!range || !window._mainBarCount || !window._indicatorBarCount) return;
+                const offset = window._mainBarCount - window._indicatorBarCount;
+                const adjustedRange = {
+                    from: range.from - offset,
+                    to: range.to - offset
+                };
+                try {
+                    hurstChart.timeScale().setVisibleLogicalRange(adjustedRange);
+                    window.confidenceChart.timeScale().setVisibleLogicalRange(adjustedRange);
+                } catch (e) { /* not ready */ }
+            });
+
+            // --- CROSSHAIR SYNCHRONIZATION ---
+            let isCrosshairSyncing = false;
+            chart.subscribeCrosshairMove(param => {
+                if (isCrosshairSyncing) return;
+                isCrosshairSyncing = true;
+                if (param.time && hurstLineSeries && window.confidenceSeries) {
+                    try { hurstChart.setCrosshairPosition(0.6, param.time, hurstLineSeries); } catch (e) { }
+                    try { window.confidenceChart.setCrosshairPosition(0, param.time, window.confidenceSeries); } catch (e) { }
+                } else {
+                    try { hurstChart.clearCrosshairPosition(); } catch (e) { }
+                    try { window.confidenceChart.clearCrosshairPosition(); } catch (e) { }
+                }
+                isCrosshairSyncing = false;
+            });
+            hurstChart.subscribeCrosshairMove(param => {
+                if (isCrosshairSyncing) return;
+                isCrosshairSyncing = true;
+                if (param.time) {
+                    try { chart.setCrosshairPosition(960, param.time, candleSeries); } catch (e) { }
+                    try { window.confidenceChart.setCrosshairPosition(0, param.time, window.confidenceSeries); } catch (e) { }
+                } else {
+                    try { chart.clearCrosshairPosition(); } catch (e) { }
+                    try { window.confidenceChart.clearCrosshairPosition(); } catch (e) { }
+                }
+                isCrosshairSyncing = false;
+            });
+            window.confidenceChart.subscribeCrosshairMove(param => {
+                if (isCrosshairSyncing) return;
+                isCrosshairSyncing = true;
+                if (param.time) {
+                    try { chart.setCrosshairPosition(960, param.time, candleSeries); } catch (e) { }
+                    try { hurstChart.setCrosshairPosition(0.6, param.time, hurstLineSeries); } catch (e) { }
+                } else {
+                    try { chart.clearCrosshairPosition(); } catch (e) { }
+                    try { hurstChart.clearCrosshairPosition(); } catch (e) { }
+                }
+                isCrosshairSyncing = false;
+            });
+
+            // Reference lines replaced by colored bands above
+            const hurstRef045 = hurstChart.addLineSeries({
+                color: 'rgba(239, 68, 68, 0.4)',
+                lineWidth: 1,
+                lineStyle: 2,
+                lastValueVisible: false,
+                priceLineVisible: false,
+            });
+
+            const hurstRef065 = hurstChart.addLineSeries({
+                color: 'rgba(16, 185, 129, 0.4)',
+                lineWidth: 1,
+                lineStyle: 2,
+                lastValueVisible: false,
+                priceLineVisible: false,
+            });
+
+            // Add EMA Lines
+            const ema21Series = chart.addLineSeries({
+                color: '#00ffaa',
+                lineWidth: 2,
+                crosshairMarkerVisible: false,
+                lastValueVisible: false,
+                priceLineVisible: false,
+            });
+
+            const ema50Series = chart.addLineSeries({
+                color: '#ff4500',
+                lineWidth: 2,
+                crosshairMarkerVisible: false,
+                lastValueVisible: false,
+                priceLineVisible: false,
+            });
+
+            window.ema21Series = ema21Series;
+            window.ema50Series = ema50Series;
+
+            // Add Bollinger Band Lines
+            const bbUpperSeries = chart.addLineSeries({
+                color: 'rgba(167, 139, 250, 0.5)',
+                lineWidth: 1,
+                lineStyle: 2, // dashed
+                crosshairMarkerVisible: false,
+                lastValueVisible: false,
+                priceLineVisible: false,
+            });
+            const bbLowerSeries = chart.addLineSeries({
+                color: 'rgba(167, 139, 250, 0.5)',
+                lineWidth: 1,
+                lineStyle: 2, // dashed
+                crosshairMarkerVisible: false,
+                lastValueVisible: false,
+                priceLineVisible: false,
+            });
+            window.bbUpperSeries = bbUpperSeries;
+            window.bbLowerSeries = bbLowerSeries;
+            // Invisible overlay series for trade markers (renders ON TOP of EMAs)
+            const markerOverlay = chart.addLineSeries({
+                color: 'transparent',
+                lineWidth: 0,
+                lastValueVisible: false,
+                priceLineVisible: false,
+                crosshairMarkerVisible: false,
+            });
+            window.markerOverlay = markerOverlay;
+            window.hurstRef045 = hurstRef045;
+            window.hurstRef065 = hurstRef065;
+
+
+            // ... (existing code) ...
+
+        }
+
+        function logDebug(msg) {
+            const el = document.getElementById('debugLog');
+            if (el) el.innerHTML += '<br>' + new Date().toISOString().split('T')[1].split('.')[0] + ' ' + msg;
+        }
+
+        async function fetchAndUpdateIndicators() {
+            console.log('💓 Heartbeat Check Running [v_1771136372_FINAL_FIX]');
+            const reasonEl = document.getElementById('analysisReasoning');
+
+            try {
+                // 1. Fetch Data
+                const analysisResp = await fetch(`${API_BASE}/analysis-history?limit=5000`);
+                if (!analysisResp.ok) throw new Error('Analysis API Failed');
+                const analysisData = await analysisResp.json();
+
+                // 2. Determine Latest Analysis
+                const lastAnalysis = analysisData && analysisData.length > 0 ? analysisData[analysisData.length - 1] : null;
+
+                // --- HEARTBEAT ALERT (Central Panel) ---
+                let heartbeatHtml = "";
+                if (lastAnalysis) {
+                    const lastTime = lastAnalysis.time;
+                    const now = Math.floor(Date.now() / 1000);
+                    const lag = now - lastTime;
+
+                    if (lag > 300) { // > 5 mins
+                        heartbeatHtml = `<span style="color: #ef4444; font-weight: bold;">⚠️ DATA STALLED: ${Math.floor(lag / 60)}m ago</span> | `;
+                    } else {
+                        heartbeatHtml = `<span style="color: #10b981; font-weight: bold;">✅ LIVE</span> | `;
+                    }
+                } else {
+                    heartbeatHtml = `<span style="color: #fbbf24; font-weight: bold;">⚠️ NO DATA</span> | `;
+                }
+                // ------------------------------------
+
+                // 3. UI Updates (Text Panels)
+                if (lastAnalysis) {
+                    // Hurst
+                    const hVal = document.getElementById('hurstValue');
+                    const hReg = document.getElementById('hurstRegime');
+                    if (hVal) {
+                        hVal.innerText = lastAnalysis.hurst ? lastAnalysis.hurst.toFixed(3) : "N/A";
+                        // Color
+                        if (lastAnalysis.hurst > 0.65) hVal.style.color = '#10B981';
+                        else if (lastAnalysis.hurst < 0.45) hVal.style.color = '#3B82F6';
+                        else hVal.style.color = '#fff';
+                    }
+                    if (hReg) {
+                        const hRegime = lastAnalysis.hurst_regime || "UNKNOWN";
+                        const hStrength = Math.abs((lastAnalysis.hurst || 0.5) - 0.5);
+                        const hSufficient = hStrength >= 0.10;
+                        if (hRegime === 'TRENDING') {
+                            if (hSufficient) {
+                                hReg.innerText = `TRENDING ✅ (Fuerza: ${(hStrength * 100).toFixed(0)}% ≥ 10%)`;
+                                hReg.style.background = 'rgba(0, 255, 170, 0.2)';
+                                hReg.style.color = '#00ffaa';
+                            } else {
+                                hReg.innerText = `TRENDING ⚠️ DÉBIL (Fuerza: ${(hStrength * 100).toFixed(0)}% < 10%)`;
+                                hReg.style.background = 'rgba(251, 191, 36, 0.2)';
+                                hReg.style.color = '#fbbf24';
+                            }
+                        } else if (hRegime === 'MEAN_REVERSION') {
+                            hReg.innerText = hRegime;
+                            hReg.style.background = 'rgba(96, 165, 250, 0.2)';
+                            hReg.style.color = '#60a5fa';
+                        } else {
+                            hReg.innerText = hRegime;
+                            hReg.style.background = 'rgba(255, 255, 255, 0.1)';
+                            hReg.style.color = '#888';
+                        }
+                    }
+
+                    // OU
+                    const ouVal = document.getElementById('ouDeviation');
+                    const ouSig = document.getElementById('ouSignal');
+                    if (ouVal) {
+                        const dev = lastAnalysis.ou_deviation || 0;
+                        ouVal.innerText = dev.toFixed(2) + "σ";
+                        ouVal.style.color = Math.abs(dev) > 2 ? '#ff4500' : '#fff';
+                    }
+                    if (ouSig) ouSig.innerText = lastAnalysis.ou_signal || "NEUTRAL";
+
+                    // Signal
+                    const curSig = document.getElementById('currentSignal');
+                    const sigConf = document.getElementById('signalConfidence');
+                    const sigDur = document.getElementById('signalDuration');
+
+                    if (curSig) {
+                        curSig.innerText = lastAnalysis.signal || "HOLD";
+                        if (lastAnalysis.signal === 'CALL') curSig.style.color = '#00ffaa';
+                        else if (lastAnalysis.signal === 'PUT') curSig.style.color = '#ff4500';
+                        else curSig.style.color = '#fff';
+                    }
+                    if (sigConf) sigConf.innerText = "Confidence: " + ((lastAnalysis.confidence || 0) * 100).toFixed(1) + "%";
+                    if (sigDur) sigDur.innerText = "Duration: " + (lastAnalysis.duration || 300) + "s";
+
+                    // Update timestamps for history-based cards
+                    const nowTS = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+                    ['hurstUpdated', 'ouUpdated', 'signalUpdated', 'reasoningUpdated'].forEach(id => {
+                        const el = document.getElementById(id);
+                        if (el) el.innerText = '⏱ ' + nowTS;
+                    });
+
+                    // REASONING (With Heartbeat Prepend)
+                    if (reasonEl) {
+                        const reasoningText = lastAnalysis.reasoning || `Hurst ${lastAnalysis.hurst?.toFixed(3)} - ${lastAnalysis.hurst_regime}`;
+                        reasonEl.innerHTML = heartbeatHtml + reasoningText;
+
+                        // Border Flash if stalled
+                        if (heartbeatHtml.includes("STALLED")) {
+                            reasonEl.parentElement.style.border = "1px solid #ef4444";
+                            reasonEl.parentElement.style.boxShadow = "0 0 10px rgba(239, 68, 68, 0.2)";
+                        } else {
+                            reasonEl.parentElement.style.border = "none";
+                            reasonEl.parentElement.style.boxShadow = "none";
+                        }
+                    }
+                }
+
+                // 4. Fetch Candles
+                const candlesResp = await fetch(`${API_BASE}/candles?limit=300`);
+                let candles = [];
+                if (candlesResp.ok) {
+                    candles = await candlesResp.json();
+                }
+
+                // 5. Chart Data Preparation (Standard logic)
+                const masterMap = new Map();
+                candles.forEach(c => {
+                    masterMap.set(c.time, { time: c.time, price: Number(c.close) || 0 });
+                });
+
+                let candleDuration = 60;
+                if (candles.length > 1) {
+                    candleDuration = candles[1].time - candles[0].time;
+                }
+
+                const sortedItems = Array.from(masterMap.values()).sort((a, b) => a.time - b.time);
+
+                function calcEMA(items, period) {
+                    const res = new Map();
+                    if (items.length === 0) return res;
+                    let start = 0;
+                    while (start < items.length && items[start].price === 0) start++;
+                    if (start >= items.length) return res;
+
+                    const k = 2 / (period + 1);
+                    let ema = items[start].price;
+                    res.set(items[start].time, ema);
+
+                    for (let i = start + 1; i < items.length; i++) {
+                        const price = items[i].price;
+                        if (price !== 0) {
+                            ema = price * k + ema * (1 - k);
+                            res.set(items[i].time, ema);
+                        }
+                    }
+                    return res;
+                }
+
+                const ema21Map = calcEMA(sortedItems, 21);
+                const ema50Map = calcEMA(sortedItems, 50);
+
+                // Calculate Bollinger Bands (SMA 20 ± 2σ)
+                function calcBB(items, period, mult) {
+                    const upper = new Map(), lower = new Map();
+                    if (items.length < period) return { upper, lower };
+                    for (let i = period - 1; i < items.length; i++) {
+                        let sum = 0, sumSq = 0;
+                        for (let j = i - period + 1; j <= i; j++) {
+                            sum += items[j].price;
+                            sumSq += items[j].price * items[j].price;
+                        }
+                        const mean = sum / period;
+                        const std = Math.sqrt(sumSq / period - mean * mean);
+                        upper.set(items[i].time, mean + mult * std);
+                        lower.set(items[i].time, mean - mult * std);
+                    }
+                    return { upper, lower };
+                }
+                const bbMaps = calcBB(sortedItems, 20, 2);
+
+                const hurstData = [];
+                const ouData = [];
+                const confidenceData = [];
+                const ema21Data = [];
+                const ema50Data = [];
+                const bbUpperData = [];
+                const bbLowerData = [];
+
+                analysisData.sort((a, b) => a.time - b.time);
+
+                let analysisIdx = 0;
+                let lastValidAnalysis = null;
+
+                sortedItems.forEach((item, idx) => {
+                    const candleStartTime = item.time;
+                    const candleEndTime = candleStartTime + candleDuration;
+                    if (idx < 3 || idx > sortedItems.length - 3) {
+                    }
+
+                    let bestAnalysis = null;
+                    while (analysisIdx < analysisData.length) {
+                        const a = analysisData[analysisIdx];
+                        if (a.time < candleEndTime) {
+                            bestAnalysis = a;
+                            analysisIdx++;
+                        } else {
+                            break;
+                        }
+                    }
+
+                    let effectiveAnalysis = bestAnalysis || lastValidAnalysis;
+                    if (bestAnalysis) lastValidAnalysis = bestAnalysis;
+                    if (idx < 3 || idx > sortedItems.length - 3) {
+                    }
+
+                    // Data Points
+                    const e21 = ema21Map.get(candleStartTime);
+                    const e50 = ema50Map.get(candleStartTime);
+                    if (e21) ema21Data.push({ time: candleStartTime, value: e21 });
+                    if (e50) ema50Data.push({ time: candleStartTime, value: e50 });
+                    const bbUp = bbMaps.upper.get(candleStartTime);
+                    const bbLo = bbMaps.lower.get(candleStartTime);
+                    if (bbUp) bbUpperData.push({ time: candleStartTime, value: bbUp });
+                    if (bbLo) bbLowerData.push({ time: candleStartTime, value: bbLo });
+
+                    const price = item.price;
+
+                    let hurst = 0.5;
+                    let ouDev = 0;
+
+                    if (effectiveAnalysis) {
+                        if (effectiveAnalysis.hurst !== null && effectiveAnalysis.hurst > 0.1) {
+                            hurst = effectiveAnalysis.hurst;
+                        }
+                        // Always push hurst data (0.5 default) to keep bar count aligned
+                        // Color per-point based on regime zone
+                        const hurstColor = hurst >= 0.65 ? '#10b981' : hurst >= 0.45 ? '#eab308' : '#ef4444';
+                        hurstData.push({ time: candleStartTime, value: hurst, color: hurstColor });
+                        if (effectiveAnalysis && effectiveAnalysis.ou_deviation !== null) {
+                            ouDev = effectiveAnalysis.ou_deviation;
+                            ouData.push({ time: candleStartTime, value: ouDev, color: Math.abs(ouDev) > 2 ? '#ff4500' : '#60a5fa' });
+                        } else {
+                            ouData.push({ time: candleStartTime });
+                        }
+                    }
+
+                    // Confidence Score (0-100, granular)
+                    // 4 components: Hurst clarity, O-U strength, EMA alignment, EMA spread
+                    let score = 0;
+                    const currentHurst = effectiveAnalysis ? (effectiveAnalysis.hurst || 0.5) : 0.5;
+
+                    if (effectiveAnalysis) {
+                        // 1. Hurst Regime Clarity (0-25 pts)
+                        // How clearly is the market in a defined regime?
+                        const hurstDistance = Math.abs(currentHurst - 0.5); // distance from random walk
+                        if (hurstDistance > 0.20) score += 25;      // very clear regime
+                        else if (hurstDistance > 0.15) score += 20;
+                        else if (hurstDistance > 0.10) score += 15;
+                        else if (hurstDistance > 0.05) score += 8;
+                        else score += 2;                             // near random walk = low confidence
+
+                        // 2. O-U Deviation Strength (0-30 pts)
+                        const absOU = Math.abs(ouDev);
+                        if (absOU > 3.0) score += 30;
+                        else if (absOU > 2.5) score += 25;
+                        else if (absOU > 2.0) score += 20;
+                        else if (absOU > 1.5) score += 14;
+                        else if (absOU > 1.0) score += 8;
+                        else if (absOU > 0.5) score += 3;
+                        // absOU <= 0.5 = price near mean = no edge = 0 pts
+                    }
+
+                    // 3. EMA Alignment (0-25 pts)
+                    if (e21 && e50 && price > 0) {
+                        if (price > e21 && e21 > e50) score += 25;       // perfect bullish stack
+                        else if (price < e21 && e21 < e50) score += 25;  // perfect bearish stack
+                        else if ((price > e21 && price > e50) || (price < e21 && price < e50)) score += 12;
+                        else score += 3;                                  // mixed/choppy
+
+                        // 4. EMA Spread (0-20 pts) — wider spread = stronger trend
+                        const emaSpread = Math.abs(e21 - e50) / price * 100; // as % of price
+                        if (emaSpread > 0.5) score += 20;
+                        else if (emaSpread > 0.3) score += 14;
+                        else if (emaSpread > 0.15) score += 8;
+                        else if (emaSpread > 0.05) score += 3;
+                        // EMAs very close = no direction = 0 pts
+                    }
+
+                    if (score > 100) score = 100;
+
+                    // Direction derived from INDICATORS (not bot signal which is mostly HOLD)
+                    let direction = 'HOLD';
+
+                    // Primary: EMA stack alignment
+                    if (e21 && e50 && price > 0) {
+                        if (price > e21 && e21 > e50) direction = 'CALL';      // bullish stack
+                        else if (price < e21 && e21 < e50) direction = 'PUT';  // bearish stack
+                        // If EMAs mixed, check OU deviation for mean reversion signal
+                        else if (ouDev > 1.5) direction = 'PUT';   // price far above mean → will drop
+                        else if (ouDev < -1.5) direction = 'CALL'; // price far below mean → will bounce
+                    }
+
+                    let directionalScore = 0;
+                    let color = '#9ca3af';
+                    if (direction === 'CALL') {
+                        directionalScore = score;
+                        color = score > 60 ? '#10b981' : '#34d399';
+                    } else if (direction === 'PUT') {
+                        directionalScore = -score;
+                        color = score > 60 ? '#ef4444' : '#f87171';
+                    } else {
+                        directionalScore = score > 5 ? score * 0.1 : 0; // small bars for HOLD with some score
+                        color = '#9ca3af';
+                    }
+
+                    confidenceData.push({ time: candleStartTime, value: directionalScore, color });
+                });
+
+                // Update Charts
+                if (window.ema21Series) window.ema21Series.setData(ema21Data);
+                if (window.ema50Series) window.ema50Series.setData(ema50Data);
+                if (window.bbUpperSeries) window.bbUpperSeries.setData(bbUpperData);
+                if (window.bbLowerSeries) window.bbLowerSeries.setData(bbLowerData);
+                if (window.hurstLineSeries) window.hurstLineSeries.setData(hurstData);
+
+                // Populate regime bands using hurst timestamps
+                if (hurstData.length > 0 && window.hurstBandRed) {
+                    const bandTimes = hurstData.map(d => d.time);
+                    const firstTime = bandTimes[0];
+                    const lastTime = bandTimes[bandTimes.length - 1];
+                    // Red band: flat line at 0.45 (fills down from 0.45)
+                    window.hurstBandRed.setData([
+                        { time: firstTime, value: 0.45 },
+                        { time: lastTime, value: 0.45 }
+                    ]);
+                    // Yellow band: flat line at 0.65 (fills down from 0.65, over red)
+                    window.hurstBandYellow.setData([
+                        { time: firstTime, value: 0.65 },
+                        { time: lastTime, value: 0.65 }
+                    ]);
+                    // Green band: flat line at 0.80 (fills down from 0.80, over yellow)
+                    window.hurstBandGreen.setData([
+                        { time: firstTime, value: 0.80 },
+                        { time: lastTime, value: 0.80 }
+                    ]);
+                    // Reference lines at thresholds
+                    if (window.hurstRef045) window.hurstRef045.setData([
+                        { time: firstTime, value: 0.45 },
+                        { time: lastTime, value: 0.45 }
+                    ]);
+                    if (window.hurstRef065) window.hurstRef065.setData([
+                        { time: firstTime, value: 0.65 },
+                        { time: lastTime, value: 0.65 }
+                    ]);
+                }
+                if (window.ouHistogramSeries) window.ouHistogramSeries.setData(ouData);
+                if (window.confidenceSeries) window.confidenceSeries.setData(confidenceData);
+                // Track indicator bar count for sync offset
+                window._indicatorBarCount = hurstData.length;
+
+                // Update Thermometer Text
+                if (confidenceData.length > 0) {
+                    const last = confidenceData[confidenceData.length - 1];
+                    const valEl = document.getElementById('thermometerValue');
+                    const statusEl = document.getElementById('thermometerStatus');
+                    if (valEl) {
+                        valEl.innerText = parseFloat(last.value.toFixed(1)) + '%';
+                        valEl.style.color = last.color;
+                    }
+                    if (statusEl) {
+                        let txt = '😴 INDECISION';
+                        if (last.value > 90) txt = '🚀 DISPARO';
+                        else if (last.value > 70) txt = '⚠️ ALISTANDO';
+                        else if (last.value > 50) txt = '👀 INTERÉS';
+                        statusEl.innerText = txt;
+                        statusEl.style.color = last.color;
+                    }
+                    const thermoTS = document.getElementById('thermometerUpdated');
+                    if (thermoTS) thermoTS.innerText = '⏱ ' + new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+                }
+
+            } catch (error) {
+                console.error('❌ Error:', error);
+                if (reasonEl) reasonEl.innerText = '⚠️ ERROR: ' + error.message;
+            }
+        }
+        async function fetchAndUpdateChart() {
+            try {
+                const response = await fetch(`${API_BASE}/candles?limit=200`);
+                const candles = await response.json();
+
+                if (candles.length > 0) {
+                    candleSeries.setData(candles);
+                }
+            } catch (error) {
+                console.error('Error fetching candles:', error);
+            }
+        }
+
+
+        function initHistoricalChart() {
+            const container = document.getElementById('historicalChartContainer');
+            historicalChart = LightweightCharts.createChart(container, {
                 width: container.clientWidth,
                 height: 400,
                 layout: {
@@ -315,29 +1202,81 @@
                 },
             });
 
-            candleSeries = chart.addCandlestickSeries({
-                upColor: '#00ffaa',
-                downColor: '#ff4500',
+            historicalCandleSeries = historicalChart.addCandlestickSeries({
+                upColor: '#60a5fa',
+                downColor: '#f87171',
                 borderVisible: false,
-                wickUpColor: '#00ffaa',
-                wickDownColor: '#ff4500',
+                wickUpColor: '#60a5fa',
+                wickDownColor: '#f87171',
             });
 
             window.addEventListener('resize', () => {
-                chart.applyOptions({ width: container.clientWidth });
+                historicalChart.applyOptions({ width: container.clientWidth });
             });
         }
 
         async function fetchAndUpdateChart() {
             try {
-                const response = await fetch(`${API_BASE}/candles?limit=200`);
+                // Increased limit to 1500 to show ~24h of history on main chart
+                const response = await fetch(`${API_BASE}/candles?limit=1500`);
                 const candles = await response.json();
 
                 if (candles.length > 0) {
                     candleSeries.setData(candles);
+                    window._mainBarCount = candles.length; // Track for sync offset
+
+                    // Feed overlay series with candle close prices (invisible line, for marker z-ordering)
+                    if (window.markerOverlay) {
+                        window.markerOverlay.setData(candles.map(c => ({ time: c.time, value: c.close })));
+                    }
+
+                    // Fetch recent trades and add markers
+                    try {
+                        const tradesResp = await fetch(`${API_BASE}/trades?limit=50`);
+                        const trades = await tradesResp.json();
+                        if (trades && trades.length > 0) {
+                            const markers = trades
+                                .filter(t => t.entry_time)
+                                .map(t => {
+                                    const time = Math.floor(new Date(t.entry_time).getTime() / 1000);
+                                    const isCall = t.direction === 'CALL';
+                                    const pnl = t.pnl != null ? `$${t.pnl.toFixed(2)}` : '';
+                                    return {
+                                        time,
+                                        position: isCall ? 'belowBar' : 'aboveBar',
+                                        color: isCall ? '#00ff88' : '#ff4444',
+                                        shape: isCall ? 'arrowUp' : 'arrowDown',
+                                        text: `${t.direction} ${pnl}`,
+                                        size: 2,
+                                    };
+                                })
+                                .sort((a, b) => a.time - b.time);
+                            if (window.markerOverlay) {
+                                window.markerOverlay.setMarkers(markers);
+                            } else {
+                                candleSeries.setMarkers(markers);
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Error fetching trades for markers:', e);
+                    }
                 }
             } catch (error) {
                 console.error('Error fetching candles:', error);
+            }
+        }
+
+        async function fetchAndUpdateHistoricalChart() {
+            try {
+                // Increased limit to 3000 to show ~48h of history
+                const response = await fetch(`${API_BASE}/historical-candles?limit=3000`);
+                const candles = await response.json();
+
+                if (candles.length > 0) {
+                    historicalCandleSeries.setData(candles);
+                }
+            } catch (error) {
+                console.error('Error fetching historical candles:', error);
             }
         }
 
@@ -347,12 +1286,63 @@
                 const data = await response.json();
 
                 const badge = document.getElementById('statusBadge');
-                if (data.is_trading) {
+                const now = new Date();
+                const cooldownUntil = data.cooldown_until ? new Date(data.cooldown_until) : null;
+                const inCooldown = cooldownUntil && cooldownUntil > now;
+
+                if (inCooldown) {
+                    badge.textContent = '● PAUSED (COOLDOWN)';
+                    badge.className = 'status-badge status-stopped'; // Red/Orange
+                    badge.style.background = '#fbbf24'; // Warning color
+                    badge.style.color = '#000';
+
+                    // Update/Show cooldown timer
+                    let timerDiv = document.getElementById('cooldownTimer');
+                    if (!timerDiv) {
+                        timerDiv = document.createElement('div');
+                        timerDiv.id = 'cooldownTimer';
+                        timerDiv.style.textAlign = 'center';
+                        timerDiv.style.marginTop = '10px';
+                        timerDiv.style.padding = '10px';
+                        timerDiv.style.backgroundColor = 'rgba(251, 191, 36, 0.2)';
+                        timerDiv.style.borderRadius = '8px';
+                        timerDiv.style.border = '1px solid #fbbf24';
+                        timerDiv.style.color = '#fbbf24';
+                        // Insert after the header container (implied location, or append to a specific container)
+                        // Finding a good place... let's put it at the top of the main container or under buttons
+                        const header = document.querySelector('.header');
+                        header.parentNode.insertBefore(timerDiv, header.nextSibling);
+                    }
+
+                    const diffMs = cooldownUntil - now;
+                    const diffMins = Math.floor(diffMs / 60000);
+                    const diffSecs = Math.floor((diffMs % 60000) / 1000);
+
+                    timerDiv.innerHTML = `
+                        <strong>⚠️ TRADING PAUSED</strong><br>
+                        Reason: ${data.cooldown_reason || 'Consecutive Losses'}<br>
+                        Resuming in: <strong>${diffMins}m ${diffSecs}s</strong>
+                    `;
+                    timerDiv.style.display = 'block';
+
+                } else if (data.is_trading) {
                     badge.textContent = '● RUNNING';
                     badge.className = 'status-badge status-running';
+                    badge.style.background = ''; // Reset
+                    badge.style.color = '';
+
+                    // Hide timer if exists
+                    const timer = document.getElementById('cooldownTimer');
+                    if (timer) timer.style.display = 'none';
                 } else {
                     badge.textContent = '● STOPPED';
                     badge.className = 'status-badge status-stopped';
+                    badge.style.background = ''; // Reset
+                    badge.style.color = '';
+
+                    // Hide timer if exists
+                    const timer = document.getElementById('cooldownTimer');
+                    if (timer) timer.style.display = 'none';
                 }
 
                 // Account Type Badge
@@ -404,24 +1394,137 @@
                     }
                 }
 
+                // Update Risk Management Panel
+                if (data.risk) {
+                    const dd = data.risk.drawdown_pct || 0;
+                    const ddEl = document.getElementById('riskDrawdown');
+                    const ddBar = document.getElementById('riskDrawdownBar');
+                    const limit = data.risk.max_drawdown_limit || 25;
+
+                    ddEl.textContent = `${dd.toFixed(1)}%`;
+                    const ddPct = Math.min((dd / limit) * 100, 100);
+                    ddBar.style.width = `${ddPct}%`;
+
+                    // Color coding: green < 50%, yellow 50-80%, red > 80%
+                    if (dd >= limit) {
+                        ddEl.style.color = '#ef4444';
+                        ddBar.style.background = '#ef4444';
+                    } else if (dd >= limit * 0.6) {
+                        ddEl.style.color = '#f59e0b';
+                        ddBar.style.background = '#f59e0b';
+                    } else {
+                        ddEl.style.color = '#10b981';
+                        ddBar.style.background = '#10b981';
+                    }
+
+                    document.getElementById('riskLimit').textContent = limit;
+                    document.getElementById('riskPeakBalance').textContent = `$${data.risk.peak_balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+
+                    const clEl = document.getElementById('riskConsecLosses');
+                    clEl.textContent = data.risk.consecutive_losses;
+                    clEl.style.color = data.risk.consecutive_losses >= 2 ? '#f59e0b' : '#10b981';
+
+                    const statusEl = document.getElementById('riskStatus');
+                    if (data.risk.is_blocked) {
+                        statusEl.textContent = '⛔ Bloqueado';
+                        statusEl.style.color = '#ef4444';
+                        document.getElementById('riskPanel').style.borderColor = 'rgba(239, 68, 68, 0.6)';
+                        document.getElementById('riskPanel').style.background = 'rgba(239, 68, 68, 0.15)';
+                    } else if (data.risk.cooldown_active) {
+                        statusEl.textContent = '⏸️ Cooldown';
+                        statusEl.style.color = '#f59e0b';
+                        document.getElementById('riskPanel').style.borderColor = 'rgba(245, 158, 11, 0.4)';
+                        document.getElementById('riskPanel').style.background = 'rgba(245, 158, 11, 0.05)';
+                    } else {
+                        statusEl.textContent = '✅ Operando';
+                        statusEl.style.color = '#10b981';
+                        document.getElementById('riskPanel').style.borderColor = 'rgba(16, 185, 129, 0.3)';
+                        document.getElementById('riskPanel').style.background = 'rgba(16, 185, 129, 0.05)';
+                    }
+                }
+
             } catch (error) {
                 console.error('Error fetching bot status:', error);
             }
         }
 
+        async function resetRiskState() {
+            if (!confirm('¿Estás seguro de resetear el drawdown y desbloquear el bot?')) return;
+            try {
+                const btn = document.getElementById('resetRiskBtn');
+                btn.textContent = '⏳ Reseteando...';
+                btn.disabled = true;
+                const response = await fetch(`${API_BASE}/reset-risk`, { method: 'POST' });
+                const result = await response.json();
+                if (result.status === 'ok') {
+                    btn.textContent = '✅ Reseteado!';
+                    btn.style.borderColor = '#10b981';
+                    btn.style.color = '#10b981';
+                    setTimeout(() => {
+                        btn.textContent = '🔄 Reset Drawdown';
+                        btn.style.borderColor = '#ef4444';
+                        btn.style.color = '#ef4444';
+                        btn.disabled = false;
+                    }, 2000);
+                    fetchBotStatus(); // Refresh immediately
+                } else {
+                    alert('Error: ' + (result.detail || 'Unknown error'));
+                    btn.textContent = '🔄 Reset Drawdown';
+                    btn.disabled = false;
+                }
+            } catch (e) {
+                alert('Error resetting: ' + e.message);
+                document.getElementById('resetRiskBtn').textContent = '🔄 Reset Drawdown';
+                document.getElementById('resetRiskBtn').disabled = false;
+            }
+        }
+
         async function fetchRecentTrades() {
             try {
-                const response = await fetch(`${API_BASE}/trades?limit=15`);
-                const trades = await response.json();
+                // Fetch more trades with pagination support
+                const response = await fetch(`${API_BASE}/trades?limit=1000`);
+                const allTrades = await response.json();
+
+                totalTrades = allTrades.length;
+                const totalPages = Math.ceil(totalTrades / tradesPerPage);
+
+                // Calculate pagination slice
+                const startIndex = (currentPage - 1) * tradesPerPage;
+                const endIndex = startIndex + tradesPerPage;
+                const trades = allTrades.slice(startIndex, endIndex);
 
                 const container = document.getElementById('tradesContent');
 
-                if (trades.length === 0) {
+                if (allTrades.length === 0) {
                     container.innerHTML = '<div class="loading">No trades yet. Bot is accumulating data...</div>';
                     return;
                 }
 
                 const table = `
+                    <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                        <div style="color: #9ca3af; font-size: 0.9rem;">
+                            Showing ${startIndex + 1}-${Math.min(endIndex, totalTrades)} of ${totalTrades} trades
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <button 
+                           onclick="changePage(-1)" 
+                                ${currentPage === 1 ? 'disabled' : ''}
+                                style="padding: 8px 16px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: #fff; cursor: ${currentPage === 1 ? 'not-allowed' : 'pointer'}; opacity: ${currentPage === 1 ? '0.5' : '1'}; transition: all 0.3s; font-family: Inter, sans-serif;"
+                            >
+                                ← Previous
+                            </button>
+                            <span style="padding: 8px 16px; color: #fff; align-self: center; font-size: 0.9rem;">
+                                Page ${currentPage} of ${totalPages}
+                            </span>
+                            <button 
+                                onclick="changePage(1)" 
+                                ${currentPage >= totalPages ? 'disabled' : ''}
+                                style="padding: 8px 16px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: #fff; cursor: ${currentPage >= totalPages ? 'not-allowed' : 'pointer'}; opacity: ${currentPage >= totalPages ? '0.5' : '1'}; transition: all 0.3s; font-family: Inter, sans-serif;"
+                            >
+                                Next →
+                            </button>
+                        </div>
+                    </div>
                     <table>
                         <thead>
                             <tr>
@@ -432,6 +1535,7 @@
                                 <th>Stake</th>
                                 <th>Outcome</th>
                                 <th>P&L</th>
+                                <th>Duration</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -444,6 +1548,7 @@
                                     <td>$${trade.stake.toFixed(2)}</td>
                                     <td><span class="outcome-${trade.outcome.toLowerCase()}">${trade.outcome}</span></td>
                                     <td class="${trade.pnl >= 0 ? 'positive' : 'negative'}">$${trade.pnl.toFixed(2)}</td>
+                                    <td>${formatDuration(trade.duration_seconds || 0)}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -458,9 +1563,111 @@
             }
         }
 
+        function changePage(direction) {
+            const totalPages = Math.ceil(totalTrades / tradesPerPage);
+            const newPage = currentPage + direction;
+
+            if (newPage >= 1 && newPage <= totalPages) {
+                currentPage = newPage;
+                fetchRecentTrades();
+            }
+        }
+
+        async function fetchAnalysisMetrics() {
+            try {
+                const response = await fetch(`${API_BASE}/analysis-metrics`);
+                const data = await response.json();
+
+                if (data.status === 'ok') {
+                    // Hurst Exponent
+                    const hurstValue = data.hurst.value.toFixed(3);
+                    document.getElementById('hurstValue').textContent = hurstValue;
+
+                    // Show regime + strength status
+                    const regimeEl = document.getElementById('hurstRegime');
+                    const strength = data.hurst.trend_strength;
+                    const sufficient = data.hurst.strength_sufficient;
+
+                    if (data.hurst.regime === 'TRENDING') {
+                        if (sufficient) {
+                            regimeEl.textContent = `TRENDING ✅ (Fuerza: ${(strength * 100).toFixed(0)}% ≥ 10%)`;
+                            regimeEl.style.background = 'rgba(0, 255, 170, 0.2)';
+                            regimeEl.style.color = '#00ffaa';
+                        } else {
+                            regimeEl.textContent = `TRENDING ⚠️ DÉBIL (Fuerza: ${(strength * 100).toFixed(0)}% < 10%)`;
+                            regimeEl.style.background = 'rgba(251, 191, 36, 0.2)';
+                            regimeEl.style.color = '#fbbf24';
+                        }
+                    } else if (data.hurst.regime === 'MEAN_REVERSION') {
+                        regimeEl.textContent = data.hurst.regime;
+                        regimeEl.style.background = 'rgba(96, 165, 250, 0.2)';
+                        regimeEl.style.color = '#60a5fa';
+                    } else {
+                        regimeEl.textContent = data.hurst.regime;
+                        regimeEl.style.background = 'rgba(255, 255, 255, 0.1)';
+                        regimeEl.style.color = '#888';
+                    }
+
+                    // O-U Deviation
+                    const ouDev = data.ou.deviation.toFixed(2);
+                    document.getElementById('ouDeviation').textContent = `${ouDev}σ`;
+                    document.getElementById('ouSignal').textContent = data.ou.signal;
+
+                    // Color code O-U signal
+                    const ouSignalEl = document.getElementById('ouSignal');
+                    if (data.ou.signal === 'CALL') {
+                        ouSignalEl.style.background = 'rgba(0, 255, 170, 0.2)';
+                        ouSignalEl.style.color = '#00ffaa';
+                    } else if (data.ou.signal === 'PUT') {
+                        ouSignalEl.style.background = 'rgba(255, 69, 0, 0.2)';
+                        ouSignalEl.style.color = '#ff4500';
+                    } else {
+                        ouSignalEl.style.background = 'rgba(255, 255, 255, 0.1)';
+                        ouSignalEl.style.color = '#888';
+                    }
+
+                    // Current Signal
+                    document.getElementById('currentSignal').textContent = data.signal.direction;
+                    document.getElementById('signalConfidence').textContent =
+                        `Confidence: ${(data.signal.confidence * 100).toFixed(1)}%`;
+                    document.getElementById('signalDuration').textContent =
+                        `Duration: ${data.signal.duration}s (${Math.floor(data.signal.duration / 60)}min)`;
+
+                    // Color code signal
+                    const signalEl = document.getElementById('currentSignal');
+                    if (data.signal.direction === 'CALL') {
+                        signalEl.style.color = '#00ffaa';
+                    } else if (data.signal.direction === 'PUT') {
+                        signalEl.style.color = '#ff4500';
+                    } else {
+                        signalEl.style.color = '#888';
+                    }
+
+                    // Reasoning
+                    document.getElementById('analysisReasoning').textContent = data.signal.reasoning;
+
+                    // Update timestamps for all analysis cards
+                    const metricsTS = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+                    ['hurstUpdated', 'ouUpdated', 'signalUpdated', 'reasoningUpdated'].forEach(id => {
+                        const el = document.getElementById(id);
+                        if (el) el.innerText = '⏱ ' + metricsTS;
+                    });
+                }
+            } catch (error) {
+                console.error('Error fetching analysis metrics:', error);
+            }
+        }
+
         function formatTime(isoString) {
             const date = new Date(isoString);
             return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function formatDuration(seconds) {
+            if (!seconds) return '-';
+            const m = Math.floor(seconds / 60);
+            const s = seconds % 60;
+            return `${m}m ${s}s`;
         }
 
         function updateTimestamp() {
@@ -471,21 +1678,31 @@
         async function refreshDashboard() {
             await Promise.all([
                 fetchBotStatus(),
-                fetchRecentTrades()
+                fetchRecentTrades(),
+                fetchAnalysisMetrics()
             ]);
             updateTimestamp();
         }
 
         // Initial load
-        initChart();
+        initializeChart();
+        initHistoricalChart();
         fetchAndUpdateChart();
+        fetchAndUpdateHistoricalChart();
+        fetchAndUpdateIndicators();  // Load indicators overlay
         refreshDashboard();
 
         // Auto-refresh every 5 seconds
         setInterval(() => {
             refreshDashboard();
             fetchAndUpdateChart();
+            fetchAndUpdateIndicators();  // Update indicators
         }, 5000);
+
+        // Refresh historical chart every 5 minutes (data doesn't change often)
+        setInterval(() => {
+            fetchAndUpdateHistoricalChart();
+        }, 300000);
     </script>
 </body>
 
