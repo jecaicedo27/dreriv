@@ -1,0 +1,1727 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔬 Laboratorio de Fractalidad — Deriv R_100</title>
+    <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-secondary: #111827;
+            --bg-card: #1a1f2e;
+            --border: #2a3042;
+            --text-primary: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent: #6366f1;
+            --accent-glow: rgba(99, 102, 241, 0.3);
+            --green: #10b981;
+            --green-bg: rgba(16, 185, 129, 0.15);
+            --red: #ef4444;
+            --red-bg: rgba(239, 68, 68, 0.15);
+            --yellow: #f59e0b;
+            --blue: #3b82f6;
+            --purple: #8b5cf6;
+        }
+
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, var(--bg-secondary), var(--bg-card));
+            border-bottom: 1px solid var(--border);
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+        }
+
+        .header h1 {
+            font-size: 1.3rem;
+            background: linear-gradient(135deg, #6366f1, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .header-nav {
+            display: flex;
+            gap: 12px;
+        }
+
+        .header-nav a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .header-nav a:hover,
+        .header-nav a.active {
+            color: var(--text-primary);
+            background: var(--accent-glow);
+        }
+
+        /* Controls Bar */
+        .controls-bar {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .control-group label {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        select,
+        input[type="date"] {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        select:focus,
+        input[type="date"]:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px var(--accent-glow);
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn:hover {
+            background: var(--border);
+        }
+
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .btn-accent {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .btn-accent:hover {
+            background: #5558e6;
+        }
+
+        .btn-green {
+            background: var(--green);
+            border-color: var(--green);
+            font-weight: 600;
+            font-size: 1rem;
+            padding: 10px 24px;
+        }
+
+        .btn-green:hover {
+            background: #0ea46f;
+        }
+
+        .btn-red {
+            background: var(--red);
+            border-color: var(--red);
+            font-weight: 600;
+            font-size: 1rem;
+            padding: 10px 24px;
+        }
+
+        .btn-red:hover {
+            background: #dc2626;
+        }
+
+        .btn-gray {
+            background: var(--text-muted);
+            border-color: var(--text-muted);
+            font-weight: 600;
+            padding: 10px 20px;
+        }
+
+        .speed-btn {
+            padding: 5px 10px;
+            font-size: 0.8rem;
+            min-width: 36px;
+            justify-content: center;
+        }
+
+        .speed-btn.active {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .playback-info {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .playback-info .candle-count {
+            font-family: 'Courier New', monospace;
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        /* Main Layout */
+        .main-layout {
+            display: grid;
+            grid-template-columns: 1fr 340px;
+            grid-template-rows: 1fr auto;
+            height: calc(100vh - 130px);
+            gap: 0;
+        }
+
+        /* Chart */
+        .chart-container {
+            background: var(--bg-primary);
+            border-right: 1px solid var(--border);
+            position: relative;
+        }
+
+        #chart {
+            width: 100%;
+            height: 100%;
+        }
+
+        .chart-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            pointer-events: none;
+        }
+
+        .chart-overlay.hidden {
+            display: none;
+        }
+
+        .chart-overlay .icon {
+            font-size: 3rem;
+            margin-bottom: 12px;
+            opacity: 0.5;
+        }
+
+        /* Right Panel */
+        .right-panel {
+            background: var(--bg-secondary);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .panel-section {
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .panel-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* Pattern Matches */
+        .pattern-match {
+            background: var(--bg-card);
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            border-left: 3px solid var(--border);
+            transition: all 0.2s;
+        }
+
+        .pattern-match.call {
+            border-left-color: var(--green);
+        }
+
+        .pattern-match.put {
+            border-left-color: var(--red);
+        }
+
+        .pattern-match-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
+        .similarity-badge {
+            background: var(--accent-glow);
+            color: var(--accent);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .outcome-badge {
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .outcome-badge.call {
+            background: var(--green-bg);
+            color: var(--green);
+        }
+
+        .outcome-badge.put {
+            background: var(--red-bg);
+            color: var(--red);
+        }
+
+        .pattern-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            display: flex;
+            gap: 12px;
+        }
+
+        /* Prediction Box */
+        .prediction-box {
+            background: var(--bg-card);
+            border-radius: 10px;
+            padding: 16px;
+            text-align: center;
+            border: 1px solid var(--border);
+        }
+
+        .prediction-direction {
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin: 8px 0;
+        }
+
+        .prediction-direction.call {
+            color: var(--green);
+        }
+
+        .prediction-direction.put {
+            color: var(--red);
+        }
+
+        .prediction-direction.neutral {
+            color: var(--text-muted);
+        }
+
+        .prediction-bar {
+            display: flex;
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 8px 0;
+            background: var(--bg-primary);
+        }
+
+        .prediction-bar-call {
+            background: var(--green);
+            transition: width 0.5s ease;
+        }
+
+        .prediction-bar-put {
+            background: var(--red);
+            transition: width 0.5s ease;
+        }
+
+        .prediction-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        /* Indicators Grid */
+        .indicators-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .indicator-item {
+            background: var(--bg-card);
+            border-radius: 6px;
+            padding: 8px 10px;
+        }
+
+        .indicator-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .indicator-value {
+            font-size: 1rem;
+            font-weight: 600;
+            font-family: 'Courier New', monospace;
+        }
+
+        .indicator-value.bullish {
+            color: var(--green);
+        }
+
+        .indicator-value.bearish {
+            color: var(--red);
+        }
+
+        .indicator-value.neutral {
+            color: var(--yellow);
+        }
+
+        /* User Prediction Section */
+        .prediction-actions {
+            padding: 16px;
+            background: var(--bg-card);
+            border-top: 1px solid var(--border);
+        }
+
+        .prediction-buttons {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .prediction-buttons .btn {
+            flex: 1;
+            justify-content: center;
+        }
+
+        /* Score */
+        .score-display {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--bg-secondary);
+            padding: 10px 14px;
+            border-radius: 8px;
+        }
+
+        .score-label {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .score-value {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        .score-detail {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        /* Pattern Stats Bar */
+        .stats-bar {
+            padding: 12px 24px;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 24px;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            grid-column: 1 / -1;
+        }
+
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .stat-value {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        /* Loading spinner */
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 500;
+            z-index: 1000;
+            animation: slideIn 0.3s ease;
+        }
+
+        .toast.success {
+            background: var(--green);
+        }
+
+        .toast.error {
+            background: var(--red);
+        }
+
+        .toast.info {
+            background: var(--blue);
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateY(20px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .main-layout {
+                grid-template-columns: 1fr;
+                grid-template-rows: 50vh auto;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Header -->
+    <div class="header">
+        <h1>🔬 Laboratorio de Fractalidad</h1>
+        <div class="header-nav">
+            <a href="/deriv/dashboard">📊 Dashboard</a>
+            <a href="/deriv/simulations" class="active">🔬 Simulaciones</a>
+        </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls-bar">
+        <div class="control-group">
+            <label>Fecha</label>
+            <select id="dateSelect">
+                <option value="">Seleccionar día...</option>
+            </select>
+        </div>
+
+        <div class="control-group">
+            <button class="btn" id="btnPlay" onclick="togglePlay()" disabled>▶ Play</button>
+            <button class="btn" id="btnStep" onclick="stepForward()" disabled>⏭ +1</button>
+            <button class="btn" id="btnStep5" onclick="stepForward(5)" disabled>⏭ +5</button>
+        </div>
+
+        <div class="control-group">
+            <label>Velocidad</label>
+            <button class="btn speed-btn active" data-speed="1000" onclick="setSpeed(1000, this)">×1</button>
+            <button class="btn speed-btn" data-speed="500" onclick="setSpeed(500, this)">×2</button>
+            <button class="btn speed-btn" data-speed="200" onclick="setSpeed(200, this)">×5</button>
+            <button class="btn speed-btn" data-speed="100" onclick="setSpeed(100, this)">×10</button>
+        </div>
+
+        <div class="control-group">
+            <button class="btn btn-accent" id="btnPopulate" onclick="populatePatterns()">🧠 Generar Vectores</button>
+            <button class="btn" id="btnSimBot" onclick="simulateBot()"
+                style="background: linear-gradient(135deg, var(--purple), var(--accent)); color: #fff; border: none;">🤖
+                Simular Bot</button>
+        </div>
+
+        <div class="playback-info">
+            <span>Vela: <span class="candle-count" id="candleIndex">0</span> / <span id="totalCandles">0</span></span>
+            <span id="currentTime">--:--</span>
+        </div>
+    </div>
+
+    <!-- Main Layout -->
+    <div class="main-layout">
+        <!-- Chart -->
+        <div class="chart-container">
+            <div id="chart"></div>
+            <div class="chart-overlay" id="chartOverlay">
+                <div class="icon">📊</div>
+                <div>Selecciona un día para empezar el replay</div>
+                <div style="font-size: 0.85rem; margin-top: 8px; color: var(--text-muted)">
+                    Las velas se revelarán una a una como mercado en vivo
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel -->
+        <div class="right-panel">
+            <!-- pgvector Prediction -->
+            <div class="panel-section">
+                <div class="panel-title">🧠 Predicción pgvector</div>
+                <div class="prediction-box" id="predictionBox">
+                    <div style="font-size: 0.8rem; color: var(--text-muted);">Esperando datos...</div>
+                    <div class="prediction-direction neutral" id="predDirection">—</div>
+                    <div class="prediction-bar">
+                        <div class="prediction-bar-call" id="predBarCall" style="width: 50%"></div>
+                        <div class="prediction-bar-put" id="predBarPut" style="width: 50%"></div>
+                    </div>
+                    <div class="prediction-labels">
+                        <span id="predCallPct">CALL 50%</span>
+                        <span id="predPutPct">PUT 50%</span>
+                    </div>
+                    <div style="margin-top: 6px; font-size: 0.75rem; color: var(--text-muted);">
+                        Similitud promedio: <span id="predAvgSim">--%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pattern Matches -->
+            <div class="panel-section" style="flex: 1; overflow-y: auto;">
+                <div class="panel-title">🔍 Patrones Similares <span id="matchCount">(0)</span></div>
+                <div id="patternMatches">
+                    <div style="text-align: center; padding: 20px; color: var(--text-muted); font-size: 0.85rem;">
+                        Se necesitan al menos 30 velas para buscar patrones
+                    </div>
+                </div>
+            </div>
+
+            <!-- Indicators -->
+            <div class="panel-section">
+                <div class="panel-title">📈 Indicadores Actuales</div>
+                <div class="indicators-grid">
+                    <div class="indicator-item">
+                        <div class="indicator-label">RSI</div>
+                        <div class="indicator-value" id="indRSI">--</div>
+                    </div>
+                    <div class="indicator-item">
+                        <div class="indicator-label">Hurst</div>
+                        <div class="indicator-value" id="indHurst">--</div>
+                    </div>
+                    <div class="indicator-item">
+                        <div class="indicator-label">MACD</div>
+                        <div class="indicator-value" id="indMACD">--</div>
+                    </div>
+                    <div class="indicator-item">
+                        <div class="indicator-label">O-U Dev</div>
+                        <div class="indicator-value" id="indOU">--</div>
+                    </div>
+                    <div class="indicator-item">
+                        <div class="indicator-label">BB Pos</div>
+                        <div class="indicator-value" id="indBB">--</div>
+                    </div>
+                    <div class="indicator-item">
+                        <div class="indicator-label">Régimen</div>
+                        <div class="indicator-value" id="indRegime" style="font-size: 0.8rem;">--</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- User Prediction -->
+            <div class="prediction-actions">
+                <div class="panel-title">🎯 Tu Predicción</div>
+                <div class="prediction-buttons">
+                    <button class="btn btn-green" id="btnCall" onclick="makePrediction('CALL')" disabled>🟢
+                        CALL</button>
+                    <button class="btn btn-red" id="btnPut" onclick="makePrediction('PUT')" disabled>🔴 PUT</button>
+                    <button class="btn btn-gray" onclick="makePrediction('HOLD')" disabled>⚪ HOLD</button>
+                </div>
+                <div class="score-display">
+                    <div>
+                        <div class="score-label">Tu Score</div>
+                        <div class="score-value" id="userScore">0/0</div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div class="score-label">Precisión</div>
+                        <div class="score-value" id="userAccuracy">--%</div>
+                    </div>
+                </div>
+                <div style="text-align: center; margin-top: 8px;">
+                    <span class="score-detail" id="userScoreDetail">Haz clic en CALL o PUT para predecir la próxima
+                        vela</span>
+                </div>
+            </div>
+
+            <!-- Bot Simulation Results -->
+            <div class="panel" id="botResultsPanel" style="display: none;">
+                <div class="panel-title">🤖 RESULTADOS DEL BOT</div>
+                <div id="botSummary" style="margin-bottom: 12px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <div class="indicator-box">
+                            <div class="indicator-label">TRADES</div>
+                            <div class="indicator-value neutral" id="botTrades">--</div>
+                        </div>
+                        <div class="indicator-box">
+                            <div class="indicator-label">WIN RATE</div>
+                            <div class="indicator-value" id="botWinRate">--</div>
+                        </div>
+                        <div class="indicator-box">
+                            <div class="indicator-label">P&L</div>
+                            <div class="indicator-value" id="botPnL">--</div>
+                        </div>
+                        <div class="indicator-box">
+                            <div class="indicator-label">MAX DD</div>
+                            <div class="indicator-value" id="botDrawdown">--</div>
+                        </div>
+                    </div>
+                    <div
+                        style="text-align: center; margin-top: 8px; padding: 8px; background: var(--bg-secondary); border-radius: 6px;">
+                        <span style="color: var(--text-secondary); font-size: 11px;">Balance Final</span>
+                        <div style="font-size: 18px; font-weight: bold;" id="botFinalBalance">--</div>
+                    </div>
+                </div>
+                <div id="botTradesList" style="max-height: 200px; overflow-y: auto; font-size: 11px;"></div>
+            </div>
+        </div>
+
+        <!-- Stats Bar -->
+        <div class="stats-bar">
+            <div class="stat-item">
+                📦 Patrones en DB: <span class="stat-value" id="statTotal">--</span>
+            </div>
+            <div class="stat-item">
+                📅 Días cubiertos: <span class="stat-value" id="statDays">--</span>
+            </div>
+            <div class="stat-item">
+                🟢 CALL: <span class="stat-value" id="statCall">--</span>
+            </div>
+            <div class="stat-item">
+                🔴 PUT: <span class="stat-value" id="statPut">--</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // CONFIGURATION
+        // ============================================
+        const API_BASE = window.location.pathname.includes('/deriv/')
+            ? '/deriv/api'
+            : '/api';
+
+        let chart = null;
+        let candleSeries = null;
+        let bbUpperLine = null;
+        let bbLowerLine = null;
+        let ema21Line = null;
+        let ema50Line = null;
+
+        let allCandles = [];
+        let currentIndex = 0;
+        let totalCandles = 0;
+        let isPlaying = false;
+        let playInterval = null;
+        let playSpeed = 1000;
+        let selectedDate = '';
+
+        // User scoring
+        let userPredictions = { correct: 0, total: 0, streak: 0 };
+        let pendingPrediction = null;
+
+        // Revealed price data for live calculation
+        let revealedCloses = [];
+
+        // ============================================
+        // LIVE INDICATOR CALCULATIONS
+        // ============================================
+
+        function calcEMA(closes, period) {
+            if (closes.length < period) return null;
+            const k = 2 / (period + 1);
+            // Seed with SMA of first 'period' values
+            let ema = 0;
+            for (let i = 0; i < period; i++) ema += closes[i];
+            ema /= period;
+            // Then apply EMA formula
+            for (let i = period; i < closes.length; i++) {
+                ema = closes[i] * k + ema * (1 - k);
+            }
+            return ema;
+        }
+
+        function calcBB(closes, period = 20, mult = 2) {
+            if (closes.length < period) return null;
+            const slice = closes.slice(-period);
+            const sma = slice.reduce((a, b) => a + b, 0) / period;
+            const variance = slice.reduce((a, b) => a + (b - sma) ** 2, 0) / period;
+            const std = Math.sqrt(variance);
+            return { upper: sma + mult * std, middle: sma, lower: sma - mult * std };
+        }
+
+        function calcRSI(closes, period = 14) {
+            if (closes.length < period + 1) return null;
+            let gains = 0, losses = 0;
+            for (let i = closes.length - period; i < closes.length; i++) {
+                const diff = closes[i] - closes[i - 1];
+                if (diff > 0) gains += diff;
+                else losses -= diff;
+            }
+            const avgGain = gains / period;
+            const avgLoss = losses / period;
+            if (avgLoss === 0) return 100;
+            const rs = avgGain / avgLoss;
+            return 100 - (100 / (1 + rs));
+        }
+
+        function calcMACD(closes) {
+            // MACD = EMA(12) - EMA(26), Signal = EMA(9) of MACD
+            if (closes.length < 26) return null;
+            const ema12 = calcEMA(closes, 12);
+            const ema26 = calcEMA(closes, 26);
+            if (ema12 === null || ema26 === null) return null;
+            const macdLine = ema12 - ema26;
+
+            // Build MACD history for signal line
+            const macdHistory = [];
+            for (let i = 26; i <= closes.length; i++) {
+                const e12 = calcEMA(closes.slice(0, i), 12);
+                const e26 = calcEMA(closes.slice(0, i), 26);
+                if (e12 !== null && e26 !== null) macdHistory.push(e12 - e26);
+            }
+
+            const signal = macdHistory.length >= 9 ? calcEMA(macdHistory, 9) : macdLine;
+            return {
+                macd: macdLine,
+                signal: signal,
+                histogram: macdLine - signal
+            };
+        }
+
+        function calcHurst(closes, maxLag = 20) {
+            // Simplified R/S analysis
+            if (closes.length < maxLag + 2) return null;
+            const recent = closes.slice(-Math.min(100, closes.length));
+
+            // Calculate log returns
+            const returns = [];
+            for (let i = 1; i < recent.length; i++) {
+                returns.push(Math.log(recent[i] / recent[i - 1]));
+            }
+            if (returns.length < maxLag) return null;
+
+            const logN = [], logRS = [];
+            for (let lag of [10, 15, 20, 30, 40].filter(l => l < returns.length)) {
+                const chunks = Math.floor(returns.length / lag);
+                if (chunks < 1) continue;
+                let rsSum = 0;
+                for (let c = 0; c < chunks; c++) {
+                    const chunk = returns.slice(c * lag, (c + 1) * lag);
+                    const mean = chunk.reduce((a, b) => a + b, 0) / chunk.length;
+                    const deviations = chunk.map(r => r - mean);
+                    let cumSum = 0;
+                    let maxVal = -Infinity, minVal = Infinity;
+                    for (const d of deviations) {
+                        cumSum += d;
+                        maxVal = Math.max(maxVal, cumSum);
+                        minVal = Math.min(minVal, cumSum);
+                    }
+                    const R = maxVal - minVal;
+                    const S = Math.sqrt(chunk.reduce((a, b) => a + (b - mean) ** 2, 0) / chunk.length);
+                    if (S > 0) rsSum += R / S;
+                }
+                if (chunks > 0 && rsSum > 0) {
+                    logN.push(Math.log(lag));
+                    logRS.push(Math.log(rsSum / chunks));
+                }
+            }
+
+            if (logN.length < 2) return 0.5;
+
+            // Linear regression slope = Hurst exponent
+            const n = logN.length;
+            const sumX = logN.reduce((a, b) => a + b, 0);
+            const sumY = logRS.reduce((a, b) => a + b, 0);
+            const sumXY = logN.reduce((a, x, i) => a + x * logRS[i], 0);
+            const sumX2 = logN.reduce((a, x) => a + x * x, 0);
+            const H = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+
+            return Math.max(0, Math.min(1, H));
+        }
+
+        function calcOUDeviation(closes, window = 50) {
+            // Ornstein-Uhlenbeck: how far price is from its mean-reverting level
+            if (closes.length < window) return 0;
+            const recent = closes.slice(-window);
+            const mean = recent.reduce((a, b) => a + b, 0) / window;
+            const stdDev = Math.sqrt(recent.reduce((a, b) => a + (b - mean) ** 2, 0) / window);
+            if (stdDev === 0) return 0;
+            return (closes[closes.length - 1] - mean) / stdDev;
+        }
+
+        function calcBBPosition(closes) {
+            const bb = calcBB(closes, 20, 2);
+            if (!bb || bb.upper === bb.lower) return 0.5;
+            const price = closes[closes.length - 1];
+            return Math.max(0, Math.min(1, (price - bb.lower) / (bb.upper - bb.lower)));
+        }
+
+        function detectRegime(closes) {
+            if (closes.length < 50) return 'unknown';
+            const recent20 = closes.slice(-20);
+            const recent50 = closes.slice(-50);
+            const sma20 = recent20.reduce((a, b) => a + b, 0) / 20;
+            const sma50 = recent50.reduce((a, b) => a + b, 0) / 50;
+            const std20 = Math.sqrt(recent20.reduce((a, b) => a + (b - sma20) ** 2, 0) / 20);
+            const volatility = std20 / sma20;
+
+            if (volatility > 0.01) return 'EXPANDING';
+            if (volatility < 0.003) return 'CONTRACTING';
+            return 'NORMAL';
+        }
+
+        // ============================================
+        // INITIALIZATION
+        // ============================================
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initChart();
+            loadDates();
+            loadPatternStats();
+        });
+
+        function initChart() {
+            const container = document.getElementById('chart');
+            chart = LightweightCharts.createChart(container, {
+                layout: {
+                    background: { color: '#0a0e1a' },
+                    textColor: '#94a3b8',
+                    fontSize: 12,
+                },
+                grid: {
+                    vertLines: { color: '#1a1f2e' },
+                    horzLines: { color: '#1a1f2e' },
+                },
+                crosshair: {
+                    mode: LightweightCharts.CrosshairMode.Normal,
+                    vertLine: { color: '#6366f1', width: 1, style: 2 },
+                    horzLine: { color: '#6366f1', width: 1, style: 2 },
+                },
+                timeScale: {
+                    borderColor: '#2a3042',
+                    timeVisible: true,
+                    secondsVisible: false,
+                },
+                rightPriceScale: {
+                    borderColor: '#2a3042',
+                },
+            });
+
+            candleSeries = chart.addCandlestickSeries({
+                upColor: '#10b981',
+                downColor: '#ef4444',
+                borderUpColor: '#10b981',
+                borderDownColor: '#ef4444',
+                wickUpColor: '#10b981',
+                wickDownColor: '#ef4444',
+            });
+
+            // Bollinger Bands
+            bbUpperLine = chart.addLineSeries({
+                color: 'rgba(99, 102, 241, 0.3)',
+                lineWidth: 1,
+                lineStyle: 2,
+                priceLineVisible: false,
+                lastValueVisible: false,
+            });
+
+            bbLowerLine = chart.addLineSeries({
+                color: 'rgba(99, 102, 241, 0.3)',
+                lineWidth: 1,
+                lineStyle: 2,
+                priceLineVisible: false,
+                lastValueVisible: false,
+            });
+
+            // EMAs
+            ema21Line = chart.addLineSeries({
+                color: '#f59e0b',
+                lineWidth: 1,
+                priceLineVisible: false,
+                lastValueVisible: false,
+            });
+
+            ema50Line = chart.addLineSeries({
+                color: '#3b82f6',
+                lineWidth: 1,
+                priceLineVisible: false,
+                lastValueVisible: false,
+            });
+
+            // Handle resize
+            const resizeObserver = new ResizeObserver(entries => {
+                const { width, height } = entries[0].contentRect;
+                chart.applyOptions({ width, height });
+            });
+            resizeObserver.observe(container);
+        }
+
+        // ============================================
+        // DATA LOADING
+        // ============================================
+
+        async function loadDates() {
+            try {
+                const res = await fetch(`${API_BASE}/simulation/dates`);
+                const data = await res.json();
+                const select = document.getElementById('dateSelect');
+
+                data.dates.forEach(d => {
+                    const opt = document.createElement('option');
+                    opt.value = d.date;
+                    opt.textContent = `${d.date} (${d.candle_count} velas)`;
+                    select.appendChild(opt);
+                });
+
+                select.addEventListener('change', (e) => {
+                    if (e.target.value) {
+                        loadDay(e.target.value);
+                    }
+                });
+            } catch (e) {
+                showToast('Error cargando fechas', 'error');
+            }
+        }
+
+        async function loadDay(date) {
+            selectedDate = date;
+            currentIndex = 0;
+            allCandles = [];
+            isPlaying = false;
+            if (playInterval) clearInterval(playInterval);
+
+            // Reset user score and revealed closes
+            userPredictions = { correct: 0, total: 0, streak: 0 };
+            pendingPrediction = null;
+            revealedCloses = [];
+            updateScoreDisplay();
+
+            // Clear chart
+            candleSeries.setData([]);
+            bbUpperLine.setData([]);
+            bbLowerLine.setData([]);
+            ema21Line.setData([]);
+            ema50Line.setData([]);
+
+            // Load all candles (for progressive reveal)
+            try {
+                const res = await fetch(`${API_BASE}/simulation/candles?date=${date}&index=99999`);
+                const data = await res.json();
+                allCandles = data.candles;
+                totalCandles = data.total_candles;
+
+                document.getElementById('totalCandles').textContent = totalCandles;
+                document.getElementById('candleIndex').textContent = '0';
+                document.getElementById('chartOverlay').classList.add('hidden');
+
+                // Enable controls
+                document.getElementById('btnPlay').disabled = false;
+                document.getElementById('btnStep').disabled = false;
+                document.getElementById('btnStep5').disabled = false;
+                document.getElementById('btnCall').disabled = false;
+                document.getElementById('btnPut').disabled = false;
+
+                // Show first 5 candles
+                stepForward(5);
+
+                showToast(`📊 ${totalCandles} velas cargadas para ${date}`, 'info');
+            } catch (e) {
+                showToast('Error cargando datos', 'error');
+            }
+        }
+
+        // ============================================
+        // PLAYBACK
+        // ============================================
+
+        function stepForward(steps = 1) {
+            for (let i = 0; i < steps; i++) {
+                if (currentIndex >= allCandles.length) break;
+
+                // Check pending prediction
+                if (pendingPrediction && currentIndex > 0) {
+                    resolvePrediction();
+                }
+
+                const candle = allCandles[currentIndex];
+
+                // Add candle to chart
+                const chartData = {
+                    time: candle.timestamp,
+                    open: candle.open,
+                    high: candle.high,
+                    low: candle.low,
+                    close: candle.close,
+                };
+                candleSeries.update(chartData);
+
+                // Track closes for live indicator calc
+                revealedCloses.push(candle.close);
+
+                // Live-calculated Bollinger Bands (20-period)
+                const bb = calcBB(revealedCloses, 20, 2);
+                if (bb) {
+                    bbUpperLine.update({ time: candle.timestamp, value: bb.upper });
+                    bbLowerLine.update({ time: candle.timestamp, value: bb.lower });
+                }
+
+                // Live-calculated EMAs
+                const ema21 = calcEMA(revealedCloses, 21);
+                const ema50 = calcEMA(revealedCloses, 50);
+                if (ema21 !== null) {
+                    ema21Line.update({ time: candle.timestamp, value: ema21 });
+                }
+                if (ema50 !== null) {
+                    ema50Line.update({ time: candle.timestamp, value: ema50 });
+                }
+
+                currentIndex++;
+
+                // Check if the bot has a trade at this candle index
+                checkBotTrade(currentIndex - 1);
+            }
+
+            // Update UI
+            document.getElementById('candleIndex').textContent = currentIndex;
+
+            if (currentIndex > 0) {
+                const lastCandle = allCandles[currentIndex - 1];
+                document.getElementById('currentTime').textContent =
+                    new Date(lastCandle.timestamp * 1000).toLocaleTimeString();
+                updateIndicators(lastCandle);
+            }
+
+            // Auto-scroll chart to latest
+            chart.timeScale().scrollToRealTime();
+
+            // Fetch pattern matches every 10 candles after 30
+            if (currentIndex >= 30 && currentIndex % 5 === 0) {
+                fetchPatternMatches();
+            }
+        }
+
+        function togglePlay() {
+            isPlaying = !isPlaying;
+            const btn = document.getElementById('btnPlay');
+
+            if (isPlaying) {
+                btn.textContent = '⏸ Pausa';
+                playInterval = setInterval(() => {
+                    if (currentIndex >= allCandles.length) {
+                        togglePlay();
+                        showToast('📊 Replay completado', 'info');
+                        return;
+                    }
+                    stepForward(1);
+                }, playSpeed);
+            } else {
+                btn.textContent = '▶ Play';
+                if (playInterval) clearInterval(playInterval);
+            }
+        }
+
+        function setSpeed(ms, btn) {
+            playSpeed = ms;
+            document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            // Restart interval if playing
+            if (isPlaying) {
+                clearInterval(playInterval);
+                playInterval = setInterval(() => {
+                    if (currentIndex >= allCandles.length) {
+                        togglePlay();
+                        return;
+                    }
+                    stepForward(1);
+                }, playSpeed);
+            }
+        }
+
+        // ============================================
+        // INDICATORS
+        // ============================================
+
+        function updateIndicators(candle) {
+            // All indicators calculated client-side from revealed closes
+
+            // RSI (client-side)
+            const rsi = calcRSI(revealedCloses, 14);
+            const rsiEl = document.getElementById('indRSI');
+            if (rsi !== null) {
+                rsiEl.textContent = rsi.toFixed(1);
+                rsiEl.className = 'indicator-value ' + (rsi < 30 ? 'bearish' : rsi > 70 ? 'bullish' : 'neutral');
+            } else {
+                rsiEl.textContent = '--';
+                rsiEl.className = 'indicator-value neutral';
+            }
+
+            // Hurst (client-side R/S analysis)
+            const hurst = calcHurst(revealedCloses);
+            const hurstEl = document.getElementById('indHurst');
+            if (hurst !== null) {
+                hurstEl.textContent = hurst.toFixed(3);
+                hurstEl.className = 'indicator-value ' + (hurst > 0.55 ? 'bullish' : hurst < 0.45 ? 'bearish' : 'neutral');
+            } else {
+                hurstEl.textContent = '--';
+                hurstEl.className = 'indicator-value neutral';
+            }
+
+            // MACD (client-side)
+            const macdData = calcMACD(revealedCloses);
+            const macdEl = document.getElementById('indMACD');
+            if (macdData !== null) {
+                macdEl.textContent = macdData.histogram.toFixed(4);
+                macdEl.className = 'indicator-value ' + (macdData.histogram > 0 ? 'bullish' : 'bearish');
+            } else {
+                macdEl.textContent = '--';
+                macdEl.className = 'indicator-value neutral';
+            }
+
+            // O-U Deviation (client-side)
+            const ou = calcOUDeviation(revealedCloses, 50);
+            const ouEl = document.getElementById('indOU');
+            ouEl.textContent = ou.toFixed(2) + 'σ';
+            ouEl.className = 'indicator-value ' + (ou > 2 ? 'bullish' : ou < -2 ? 'bearish' : 'neutral');
+
+            // BB Position (client-side)
+            const bbPos = calcBBPosition(revealedCloses);
+            const bbEl = document.getElementById('indBB');
+            bbEl.textContent = (bbPos * 100).toFixed(0) + '%';
+            bbEl.className = 'indicator-value ' + (bbPos > 0.8 ? 'bullish' : bbPos < 0.2 ? 'bearish' : 'neutral');
+
+            // Regime (client-side)
+            const regime = detectRegime(revealedCloses);
+            const regimeEl = document.getElementById('indRegime');
+            regimeEl.textContent = regime;
+        }
+
+        // ============================================
+        // PATTERN MATCHING
+        // ============================================
+
+        async function fetchPatternMatches() {
+            try {
+                const res = await fetch(`${API_BASE}/simulation/pattern-match?date=${selectedDate}&index=${currentIndex}`);
+                const data = await res.json();
+
+                renderPatternMatches(data.matches || []);
+                renderPrediction(data.prediction);
+                document.getElementById('matchCount').textContent = `(${(data.matches || []).length})`;
+            } catch (e) {
+                console.error('Pattern match error:', e);
+            }
+        }
+
+        function renderPatternMatches(matches) {
+            const container = document.getElementById('patternMatches');
+
+            if (matches.length === 0) {
+                container.innerHTML = '<div style="text-align: center; padding: 16px; color: var(--text-muted); font-size: 0.85rem;">No se encontraron patrones similares</div>';
+                return;
+            }
+
+            container.innerHTML = matches.map(m => `
+            <div class="pattern-match ${m.outcome_direction.toLowerCase()}">
+                <div class="pattern-match-header">
+                    <span class="similarity-badge">${(m.similarity * 100).toFixed(1)}% similar</span>
+                    <span class="outcome-badge ${m.outcome_direction.toLowerCase()}">${m.outcome_direction}</span>
+                </div>
+                <div class="pattern-meta">
+                    <span>📅 ${m.pattern_time.split('T')[0]}</span>
+                    <span>RSI: ${m.rsi}</span>
+                    <span>Hurst: ${m.hurst}</span>
+                </div>
+            </div>
+        `).join('');
+        }
+
+        function renderPrediction(prediction) {
+            if (!prediction) {
+                document.getElementById('predDirection').textContent = '—';
+                document.getElementById('predDirection').className = 'prediction-direction neutral';
+                return;
+            }
+
+            const dir = prediction.direction;
+            document.getElementById('predDirection').textContent = dir;
+            document.getElementById('predDirection').className = `prediction-direction ${dir.toLowerCase()}`;
+
+            document.getElementById('predBarCall').style.width = `${prediction.call_pct}%`;
+            document.getElementById('predBarPut').style.width = `${prediction.put_pct}%`;
+            document.getElementById('predCallPct').textContent = `CALL ${prediction.call_pct}%`;
+            document.getElementById('predPutPct').textContent = `PUT ${prediction.put_pct}%`;
+            document.getElementById('predAvgSim').textContent = `${prediction.avg_similarity}%`;
+        }
+
+        // ============================================
+        // USER PREDICTIONS
+        // ============================================
+
+        function makePrediction(direction) {
+            if (currentIndex >= allCandles.length) return;
+
+            const currentPrice = allCandles[currentIndex - 1].close;
+            pendingPrediction = {
+                direction: direction,
+                price: currentPrice,
+                index: currentIndex
+            };
+
+            document.getElementById('userScoreDetail').textContent =
+                `Predicción: ${direction} desde $${currentPrice.toFixed(2)}`;
+            document.getElementById('userScoreDetail').style.color =
+                direction === 'CALL' ? 'var(--green)' : direction === 'PUT' ? 'var(--red)' : 'var(--text-muted)';
+        }
+
+        function resolvePrediction() {
+            if (!pendingPrediction) return;
+
+            const currentPrice = allCandles[currentIndex - 1].close;
+            const entryPrice = pendingPrediction.price;
+            const direction = pendingPrediction.direction;
+
+            // Wait 5 candles before resolving
+            if (currentIndex - pendingPrediction.index < 5) return;
+
+            let correct = false;
+            if (direction === 'CALL') {
+                correct = currentPrice > entryPrice;
+            } else if (direction === 'PUT') {
+                correct = currentPrice < entryPrice;
+            } else {
+                // HOLD — correct if price didn't move much
+                correct = Math.abs(currentPrice - entryPrice) < entryPrice * 0.001;
+            }
+
+            userPredictions.total++;
+            if (correct) {
+                userPredictions.correct++;
+                userPredictions.streak++;
+                showToast(`✅ ¡Correcto! ${direction} ganó (racha: ${userPredictions.streak})`, 'success');
+            } else {
+                userPredictions.streak = 0;
+                showToast(`❌ Incorrecto. Precio: ${currentPrice.toFixed(2)} vs ${entryPrice.toFixed(2)}`, 'error');
+            }
+
+            pendingPrediction = null;
+            updateScoreDisplay();
+        }
+
+        function updateScoreDisplay() {
+            const { correct, total } = userPredictions;
+            document.getElementById('userScore').textContent = `${correct}/${total}`;
+            document.getElementById('userAccuracy').textContent =
+                total > 0 ? `${((correct / total) * 100).toFixed(0)}%` : '--%';
+        }
+
+        // ============================================
+        // PATTERN POPULATION
+        // ============================================
+
+        async function populatePatterns() {
+            const btn = document.getElementById('btnPopulate');
+            btn.textContent = '⏳ Iniciando...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch(`${API_BASE}/simulation/populate-patterns`, { method: 'POST' });
+                const data = await res.json();
+
+                if (data.status === 'started' || data.status === 'already_running') {
+                    showToast('🧠 Vectorización en background...', 'info');
+                    // Poll for status
+                    const pollInterval = setInterval(async () => {
+                        try {
+                            const statusRes = await fetch(`${API_BASE}/simulation/populate-status`);
+                            const status = await statusRes.json();
+
+                            if (status.running) {
+                                btn.textContent = '⏳ Generando...';
+                            } else {
+                                clearInterval(pollInterval);
+                                if (status.error) {
+                                    showToast('❌ Error: ' + status.error, 'error');
+                                } else {
+                                    showToast(`✅ ${(status.last_result || 0).toLocaleString()} patrones generados`, 'success');
+                                    loadPatternStats();
+                                }
+                                btn.textContent = '🧠 Generar Vectores';
+                                btn.disabled = false;
+                            }
+                        } catch (e) {
+                            clearInterval(pollInterval);
+                            btn.textContent = '🧠 Generar Vectores';
+                            btn.disabled = false;
+                        }
+                    }, 3000);
+                } else {
+                    showToast('❌ Error inesperado', 'error');
+                    btn.textContent = '🧠 Generar Vectores';
+                    btn.disabled = false;
+                }
+            } catch (e) {
+                showToast('❌ Error: ' + e.message, 'error');
+                btn.textContent = '🧠 Generar Vectores';
+                btn.disabled = false;
+            }
+        }
+
+        async function loadPatternStats() {
+            try {
+                const res = await fetch(`${API_BASE}/simulation/pattern-stats`);
+                const data = await res.json();
+
+                document.getElementById('statTotal').textContent = (data.total_patterns || 0).toLocaleString();
+                document.getElementById('statDays').textContent = data.days_covered || 0;
+                document.getElementById('statCall').textContent = (data.call_patterns || 0).toLocaleString();
+                document.getElementById('statPut').textContent = (data.put_patterns || 0).toLocaleString();
+            } catch (e) {
+                console.error('Stats error:', e);
+            }
+        }
+
+        // ============================================
+        // BOT SIMULATION (LIVE — candle by candle)
+        // ============================================
+
+        // Bot state machine: IDLE → ANALYZING → IN_TRADE → COOLDOWN → IDLE
+        let botEnabled = false;
+        let botState = 'IDLE';
+        let botRevealedTrades = [];
+        let botActiveMarkers = [];
+        let botBalance = 10000;
+        let botInitialBalance = 10000;
+        let botPendingEntry = null;
+        let botNextAnalysisIndex = 50;
+        const BOT_TRADE_DURATION = 5;
+        const BOT_COOLDOWN = 3;
+        let botAnalyzing = false;
+
+        function simulateBot() {
+            if (!selectedDate) {
+                showToast('⚠️ Selecciona una fecha primero', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('btnSimBot');
+
+            if (botEnabled) {
+                botEnabled = false;
+                btn.textContent = '🤖 Simular Bot';
+                btn.style.background = '';
+                showToast('🤖 Bot desactivado', 'info');
+                return;
+            }
+
+            // Toggle ON
+            botEnabled = true;
+            botState = 'IDLE';
+            botRevealedTrades = [];
+            botActiveMarkers = [];
+            botPendingEntry = null;
+            botBalance = 10000;
+            botInitialBalance = 10000;
+            botNextAnalysisIndex = Math.max(50, currentIndex);
+            botAnalyzing = false;
+
+            btn.textContent = '⏹ Detener Bot';
+            btn.style.background = 'linear-gradient(135deg, #ef4444, #dc2626)';
+
+            const panel = document.getElementById('botResultsPanel');
+            panel.style.display = 'block';
+            document.getElementById('botTrades').textContent = '0';
+            document.getElementById('botWinRate').textContent = '--%';
+            document.getElementById('botWinRate').className = 'indicator-value neutral';
+            document.getElementById('botPnL').textContent = '$0.00';
+            document.getElementById('botPnL').className = 'indicator-value neutral';
+            document.getElementById('botDrawdown').textContent = '0%';
+            document.getElementById('botDrawdown').className = 'indicator-value neutral';
+            document.getElementById('botFinalBalance').textContent = '$' + botBalance.toLocaleString();
+            document.getElementById('botFinalBalance').style.color = 'var(--text-primary)';
+            document.getElementById('botTradesList').innerHTML = '<div style="text-align:center; color: var(--text-muted); padding: 12px;">🤖 Bot activo — analizando cada vela en vivo (L1 + 🧠 Groq)</div>';
+
+            showToast('🤖 Bot activado — analiza en vivo como el bot real', 'success');
+        }
+
+        function checkBotTrade(candleIndex) {
+            if (!botEnabled) return;
+
+            // IN_TRADE: check exit
+            if (botState === 'IN_TRADE' && botPendingEntry) {
+                if (candleIndex >= botPendingEntry.exit_index) {
+                    resolveBotTrade(candleIndex);
+                }
+                return;
+            }
+
+            // COOLDOWN: wait
+            if (botState === 'COOLDOWN') {
+                if (candleIndex >= botNextAnalysisIndex) {
+                    botState = 'IDLE';
+                } else {
+                    return;
+                }
+            }
+
+            // IDLE: analyze
+            if (botState === 'IDLE' && candleIndex >= botNextAnalysisIndex && !botAnalyzing) {
+                analyzeCandleLive(candleIndex);
+            }
+        }
+
+        async function analyzeCandleLive(candleIndex) {
+            if (botAnalyzing) return;
+            botAnalyzing = true;
+            botState = 'ANALYZING';
+
+            const candle = allCandles[candleIndex];
+            const thinkingMarker = {
+                time: candle.timestamp,
+                position: 'aboveBar',
+                color: '#8b5cf6',
+                shape: 'circle',
+                text: '🔍'
+            };
+            botActiveMarkers.push(thinkingMarker);
+            candleSeries.setMarkers([...botActiveMarkers].sort((a, b) => a.time - b.time));
+
+            try {
+                const res = await fetch(
+                    `${API_BASE}/simulation/bot-step?date=${selectedDate}&candle_index=${candleIndex}&use_groq=true`,
+                    { method: 'POST' }
+                );
+                const result = await res.json();
+
+                botActiveMarkers = botActiveMarkers.filter(m => m !== thinkingMarker);
+
+                if ((result.action === 'CALL' || result.action === 'PUT') && result.confidence >= 0.60) {
+                    botPendingEntry = {
+                        action: result.action,
+                        confidence: result.confidence,
+                        entry_price: result.entry_price,
+                        entry_index: candleIndex,
+                        exit_index: candleIndex + BOT_TRADE_DURATION,
+                        timestamp: candle.timestamp,
+                        time: new Date(candle.timestamp * 1000).toISOString(),
+                        groq_used: result.groq_used,
+                        l1_signal: result.l1_signal,
+                        l1_confidence: result.l1_confidence,
+                        reasoning: result.reasoning || '',
+                        groq_reasoning: result.groq_reasoning || '',
+                        hurst: result.hurst
+                    };
+
+                    botState = 'IN_TRADE';
+
+                    const isCall = result.action === 'CALL';
+                    const groqBadge = result.groq_used ? '🧠' : '📊';
+                    botActiveMarkers.push({
+                        time: candle.timestamp,
+                        position: isCall ? 'belowBar' : 'aboveBar',
+                        color: '#f59e0b',
+                        shape: isCall ? 'arrowUp' : 'arrowDown',
+                        text: `${groqBadge} ${result.action} (${(result.confidence * 100).toFixed(0)}%) ⏳`
+                    });
+
+                    showToast(`${groqBadge} ${result.action} @ ${result.entry_price} (conf: ${(result.confidence * 100).toFixed(0)}%)`, 'info');
+                } else {
+                    botState = 'IDLE';
+                    botNextAnalysisIndex = candleIndex + 1;
+                }
+            } catch (e) {
+                console.error('Bot step error:', e);
+                botActiveMarkers = botActiveMarkers.filter(m => m !== thinkingMarker);
+                botState = 'IDLE';
+                botNextAnalysisIndex = candleIndex + 2;
+            } finally {
+                botAnalyzing = false;
+                candleSeries.setMarkers([...botActiveMarkers].sort((a, b) => a.time - b.time));
+            }
+        }
+
+        function resolveBotTrade(candleIndex) {
+            if (!botPendingEntry) return;
+            const entry = botPendingEntry;
+            const exitCandle = allCandles[Math.min(entry.exit_index, allCandles.length - 1)];
+            const exitPrice = exitCandle.close;
+
+            let won = entry.action === 'CALL' ? exitPrice > entry.entry_price : exitPrice < entry.entry_price;
+            // Kelly dinámico: 1.3% base → hasta 1.5% con alta confianza
+            const conf = entry.confidence || 0.6;
+            const stakePercent = 0.013 + (Math.min(conf, 0.95) - 0.60) * ((0.015 - 0.013) / (0.95 - 0.60));
+            const stake = Math.max(0.35, botBalance * Math.max(0.013, Math.min(0.015, stakePercent)));
+            const pnl = won ? stake * 0.84 : -stake;
+
+            const trade = {
+                ...entry,
+                direction: entry.action,
+                exit_price: exitPrice,
+                result: won ? 'WIN' : 'LOSS',
+                pnl: pnl,
+            };
+            botRevealedTrades.push(trade);
+
+            botBalance = botInitialBalance;
+            let wins = 0, maxBal = botInitialBalance, maxDD = 0;
+            botRevealedTrades.forEach(t => {
+                botBalance += t.pnl;
+                if (t.result === 'WIN') wins++;
+                if (botBalance > maxBal) maxBal = botBalance;
+                const dd = ((maxBal - botBalance) / maxBal) * 100;
+                if (dd > maxDD) maxDD = dd;
+            });
+
+            const isCall = entry.action === 'CALL';
+            const groqBadge = entry.groq_used ? '🧠' : '';
+            botActiveMarkers = botActiveMarkers.filter(m => m.time !== entry.timestamp);
+            botActiveMarkers.push({
+                time: entry.timestamp,
+                position: isCall ? 'belowBar' : 'aboveBar',
+                color: won ? '#10b981' : '#ef4444',
+                shape: isCall ? 'arrowUp' : 'arrowDown',
+                text: `${groqBadge}${entry.action} ${won ? '✓' : '✗'} $${pnl > 0 ? '+' : ''}${pnl.toFixed(0)}`
+            });
+            candleSeries.setMarkers([...botActiveMarkers].sort((a, b) => a.time - b.time));
+
+            const total = botRevealedTrades.length;
+            const winRate = total > 0 ? (wins / total * 100).toFixed(1) : 0;
+            const totalPnl = botBalance - botInitialBalance;
+
+            document.getElementById('botTrades').textContent = total;
+            const winRateEl = document.getElementById('botWinRate');
+            winRateEl.textContent = winRate + '%';
+            winRateEl.className = 'indicator-value ' + (winRate >= 55 ? 'bullish' : winRate < 50 ? 'bearish' : 'neutral');
+            const pnlEl = document.getElementById('botPnL');
+            pnlEl.textContent = (totalPnl >= 0 ? '+$' : '-$') + Math.abs(totalPnl).toFixed(2);
+            pnlEl.className = 'indicator-value ' + (totalPnl >= 0 ? 'bullish' : 'bearish');
+            const ddEl = document.getElementById('botDrawdown');
+            ddEl.textContent = maxDD.toFixed(1) + '%';
+            ddEl.className = 'indicator-value ' + (maxDD > 10 ? 'bearish' : 'neutral');
+            const balEl = document.getElementById('botFinalBalance');
+            balEl.textContent = '$' + botBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            balEl.style.color = totalPnl >= 0 ? 'var(--green)' : 'var(--red)';
+
+            updateBotTradesList();
+
+            showToast(`${won ? '✅' : '❌'} ${entry.action} ${won ? 'WIN' : 'LOSS'}: $${pnl > 0 ? '+' : ''}${pnl.toFixed(0)}`, won ? 'success' : 'error');
+
+            botPendingEntry = null;
+            botState = 'COOLDOWN';
+            botNextAnalysisIndex = entry.exit_index + BOT_COOLDOWN;
+        }
+
+        function updateBotTradesList() {
+            const listEl = document.getElementById('botTradesList');
+            let html = '<table style="width:100%; border-collapse: collapse;">';
+            html += '<tr style="color: var(--text-secondary); border-bottom: 1px solid var(--border);">';
+            html += '<th style="padding:4px; text-align:left;">Hora</th>';
+            html += '<th style="padding:4px;">Dir</th>';
+            html += '<th style="padding:4px;">Conf</th>';
+            html += '<th style="padding:4px;">Src</th>';
+            html += '<th style="padding:4px;">Res</th>';
+            html += '<th style="padding:4px; text-align:right;">P&L</th>';
+            html += '</tr>';
+
+            botRevealedTrades.forEach(t => {
+                const time = t.time.includes('T') ? t.time.split('T')[1].substring(0, 5) : t.time.substring(11, 16);
+                const isWin = t.result === 'WIN';
+                const dirColor = t.direction === 'CALL' ? 'var(--green)' : 'var(--red)';
+                const srcIcon = t.groq_used ? '🧠' : '📊';
+                const tip = t.groq_reasoning || t.reasoning || '';
+
+                html += `<tr style="border-bottom: 1px solid rgba(255,255,255,0.05);" title="${tip.replace(/"/g, '&quot;')}">`;
+                html += `<td style="padding:3px 4px; color: var(--text-secondary);">${time}</td>`;
+                html += `<td style="padding:3px 4px; color: ${dirColor}; text-align:center; font-weight:bold;">${t.direction}</td>`;
+                html += `<td style="padding:3px 4px; text-align:center;">${(t.confidence * 100).toFixed(0)}%</td>`;
+                html += `<td style="padding:3px 4px; text-align:center;" title="${t.groq_used ? 'Groq Layer 2' : 'Layer 1 only'}">${srcIcon}</td>`;
+                html += `<td style="padding:3px 4px; text-align:center;">${isWin ? '✅' : '❌'}</td>`;
+                html += `<td style="padding:3px 4px; text-align:right; color: ${isWin ? 'var(--green)' : 'var(--red)'}; font-weight:bold;">${isWin ? '+' : ''}${t.pnl.toFixed(0)}</td>`;
+                html += `</tr>`;
+            });
+
+            html += '</table>';
+            listEl.innerHTML = html;
+            listEl.scrollTop = listEl.scrollHeight;
+        }
+
+
+        // ============================================
+        // UTILITIES
+        // ============================================
+
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+    </script>
+
+</body>
+
+</html>

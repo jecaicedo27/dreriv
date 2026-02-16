@@ -32,6 +32,16 @@ class KellyCriterion:
     """
     
     @staticmethod
+    def _dynamic_max_fraction(confidence: float) -> float:
+        """
+        Dynamic max stake: 1.3% at 60% confidence → 1.5% at 95%+ confidence
+        Linear interpolation between.
+        """
+        conf = max(0.60, min(0.95, confidence))
+        max_frac = 0.013 + (conf - 0.60) * ((0.015 - 0.013) / (0.95 - 0.60))
+        return max(0.013, min(0.015, max_frac))
+
+    @staticmethod
     def calculate_kelly_fraction(
         win_probability: float,
         payout_ratio: float = 0.95,
@@ -62,10 +72,11 @@ class KellyCriterion:
         # Apply fractional Kelly (typically 0.25 = quarter Kelly)
         fractional_kelly = kelly * kelly_fraction
         
-        # Clamp to 0-1.3% of bankroll (target: 1.3% per trade)
-        fractional_kelly = max(0.0, min(0.013, fractional_kelly))
+        # Dynamic cap: 1.3% base → up to 3% with high confidence
+        max_frac = KellyCriterion._dynamic_max_fraction(win_probability)
+        fractional_kelly = max(0.0, min(max_frac, fractional_kelly))
         
-        logger.debug(f"Kelly: p={p:.3f}, b={b:.2f} → f*={kelly:.4f} → fractional={fractional_kelly:.4f}")
+        logger.debug(f"Kelly: p={p:.3f}, b={b:.2f} → f*={kelly:.4f} → fractional={fractional_kelly:.4f} (max={max_frac:.4f})")
         
         return fractional_kelly
     
@@ -97,9 +108,10 @@ class KellyCriterion:
         # Calculate stake
         stake = balance * kelly_frac
         
-        # Dynamic max: 1.3% of balance
+        # Dynamic max: 1.3% → 3% based on confidence
         if max_stake is None:
-            max_stake = balance * 0.013
+            max_frac = KellyCriterion._dynamic_max_fraction(win_probability)
+            max_stake = balance * max_frac
         
         # Apply min/max limits
         stake = max(min_stake, min(max_stake, stake))
@@ -141,6 +153,11 @@ class KellyCriterion:
         
         # Round to 2 decimals
         final_stake = round(final_stake, 2)
+        
+        # Hard cap: dynamic based on confidence (1.3% → 3%)
+        max_frac = KellyCriterion._dynamic_max_fraction(confidence)
+        max_allowed = round(balance * max_frac, 2)
+        final_stake = min(final_stake, max_allowed)
         
         # Ensure minimum
         final_stake = max(0.35, final_stake)

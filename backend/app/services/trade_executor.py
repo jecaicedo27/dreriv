@@ -58,7 +58,7 @@ class TradeExecutor:
         contract_type = signal['contract_type']
         direction = signal['final_signal']  # 'CALL' or 'PUT'
         confidence = signal['final_confidence']
-        duration = signal['suggested_duration']
+        duration = signal.get('duration', signal.get('suggested_duration', 300))  # Try 'duration' first, fallback to 'suggested_duration'
         
         # Calculate stake with Kelly Criterion
         stake_mult = signal.get('suggested_stake_multiplier', 1.0)
@@ -106,8 +106,8 @@ class TradeExecutor:
             layer1_confidence=confidence,
             layer2_similar_patterns=None,  # Not used in MVP
             layer2_weighted_winrate=None,
-            layer3_groq_used=False,
-            layer3_groq_confidence=None,
+            layer3_groq_used=signal.get('layer') == 'groq_layer2' or signal.get('groq_used', False),
+            layer3_groq_confidence=signal.get('groq_confidence'),
             
             # Final decision
             final_confidence=confidence,
@@ -174,3 +174,61 @@ class TradeExecutor:
             'profit_loss': profit_loss,
             'balance': float(self.risk_manager.bot_state.balance)
         })
+
+
+
+    async def check_pending_trades(self):
+        """
+        Check status of all pending trades and close if settled
+        """
+        try:
+            # Get pending trades
+            pending_trades = self.db.query(Trade).filter(
+                Trade.outcome == 'PENDING'
+            ).all()
+            
+            if not pending_trades:
+                return
+                
+            for trade in pending_trades:
+                try:
+                    # Check status with Deriv
+                    contract_id = int(trade.deriv_contract_id)
+                    status_data = await deriv_client.get_contract_status(contract_id)
+                    
+                    if not status_data:
+                        continue
+                        
+                    is_sold = status_data.get('is_sold')
+                    is_expired = status_data.get('is_expired')
+                    
+                    if is_sold or is_expired:
+                        # Extract outcome
+                        profit = float(status_data.get('profit', 0))
+                        status = status_data.get('status')  # won/lost
+                        sell_price = float(status_data.get('sell_price', 0))
+                        
+                        outcome = 'BREAK_EVEN'
+                        if profit > 0:
+                            outcome = 'WIN'
+                        elif profit < 0:
+                            outcome = 'LOSS'
+                        elif status == 'won':
+                             outcome = 'WIN'
+                        elif status == 'lost':
+                             outcome = 'LOSS'
+                             
+                        # Close trade
+                        await self.close_trade(
+                            trade=trade,
+                            outcome=outcome,
+                            exit_price=sell_price,
+                            profit_loss=profit
+                        )
+                        logger.success(f"✅ Stale trade {trade.id} settled via check: {outcome} {profit:+.2f}")
+                        
+                except Exception as e:
+                    logger.error(f"❌ Error checking trade {trade.id}: {e}")
+                    
+        except Exception as e:
+            logger.error(f"❌ Error in check_pending_trades: {e}")
