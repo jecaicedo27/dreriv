@@ -222,6 +222,43 @@
 </head>
 
 <body>
+    <!-- Navigation Bar -->
+    <nav style="
+        position: sticky; top: 0; z-index: 1000;
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 10px 24px;
+        background: rgba(15, 12, 41, 0.95);
+        backdrop-filter: blur(12px);
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+        font-family: 'Inter', sans-serif;
+    ">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 20px;">🤖</span>
+            <span style="font-weight: 700; font-size: 16px; color: #fff;">Deriv Bot</span>
+        </div>
+        <div style="display: flex; gap: 6px;">
+            <a href="/deriv/dashboard" style="
+                padding: 8px 18px; border-radius: 8px; text-decoration: none;
+                font-size: 13px; font-weight: 600; transition: all 0.2s;
+                background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff;
+            ">📊 Dashboard</a>
+            <a href="/deriv/simulations" style="
+                padding: 8px 18px; border-radius: 8px; text-decoration: none;
+                font-size: 13px; font-weight: 600; transition: all 0.2s;
+                background: rgba(255,255,255,0.08); color: #ccc;
+                border: 1px solid rgba(255,255,255,0.12);
+            " onmouseover="this.style.background='rgba(255,255,255,0.15)';this.style.color='#fff'"
+                onmouseout="this.style.background='rgba(255,255,255,0.08)';this.style.color='#ccc'">🔬 Simulaciones</a>
+            <a href="/deriv/accumulators" style="
+                padding: 8px 18px; border-radius: 8px; text-decoration: none;
+                font-size: 13px; font-weight: 600; transition: all 0.2s;
+                background: rgba(255,255,255,0.08); color: #ccc;
+                border: 1px solid rgba(255,255,255,0.12);
+            " onmouseover="this.style.background='rgba(255,255,255,0.15)';this.style.color='#fff'"
+                onmouseout="this.style.background='rgba(255,255,255,0.08)';this.style.color='#ccc'">🎰 Accumulators</a>
+        </div>
+    </nav>
+
     <div class="container">
         <header>
             <h1>🤖 Deriv Trading Bot Dashboard</h1>
@@ -377,6 +414,56 @@
                 </div>
             </div>
 
+            <!-- L1 vs Groq Scorecard -->
+            <div class="card" id="scorecardPanel"
+                style="grid-column: span 2; background: rgba(139, 92, 246, 0.08); border: 1px solid rgba(139, 92, 246, 0.3); margin-top: 0;">
+                <div class="card-title" style="color: #a78bfa;">📊 L1 vs Groq Scorecard</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 15px; margin-top: 10px;">
+                    <div>
+                        <div style="font-size: 0.75rem; color: #9ca3af;">L1 Win Rate</div>
+                        <div id="l1WinRate" style="font-size: 1.3rem; font-weight: bold; color: #60a5fa;">--</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.75rem; color: #9ca3af;">Groq Win Rate</div>
+                        <div id="groqWinRate" style="font-size: 1.3rem; font-weight: bold; color: #a78bfa;">--</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.75rem; color: #9ca3af;">🛡️ Groq Saved</div>
+                        <div id="groqSaved" style="font-size: 1.3rem; font-weight: bold; color: #10b981;">0</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.75rem; color: #9ca3af;">❌ Groq Missed</div>
+                        <div id="groqMissed" style="font-size: 1.3rem; font-weight: bold; color: #ef4444;">0</div>
+                    </div>
+                </div>
+                <div style="margin-top: 12px; font-size: 0.75rem; color: #6b7280;">
+                    Total decisions: <span id="totalDecisions">0</span> |
+                    L1: <span id="l1Record" style="color: #60a5fa;">0W/0L</span> |
+                    Groq: <span id="groqRecord" style="color: #a78bfa;">0W/0L/0S</span>
+                </div>
+                <!-- Decision comparison table -->
+                <div style="margin-top: 12px; max-height: 200px; overflow-y: auto;">
+                    <table id="decisionTable" style="width: 100%; font-size: 0.75rem; border-collapse: collapse;">
+                        <thead style="position: sticky; top: 0; z-index: 1;">
+                            <tr
+                                style="color: #9ca3af; border-bottom: 1px solid rgba(255,255,255,0.1); background: #1a1a2e;">
+                                <th style="text-align: left; padding: 4px;">Time</th>
+                                <th style="text-align: center; padding: 4px;">L1</th>
+                                <th style="text-align: center; padding: 4px;">Groq</th>
+                                <th style="text-align: right; padding: 4px;">Δ Price</th>
+                                <th style="text-align: center; padding: 4px;">L1 Result</th>
+                                <th style="text-align: center; padding: 4px;">Groq Result</th>
+                            </tr>
+                        </thead>
+                        <tbody id="decisionTableBody">
+                            <tr>
+                                <td colspan="6" style="text-align: center; color: #6b7280; padding: 10px;">Waiting for
+                                    data...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
             <!-- Risk Management Panel -->
             <div class="card" id="riskPanel"
                 style="grid-column: span 2; background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); margin-top: 0;">
@@ -452,7 +539,7 @@
             </div>
         </div>
 
-        <div class="trades-table" style="margin-top: 30px;">
+        <div class="trades-table" style="margin-top: 30px; display: none;">
             <h2 style="margin-bottom: 20px; color: #fff;">📊 Historical Data Chart (For Simulation)</h2>
             <div id="historicalChartContainer" style="height: 750px; position: relative;"></div>
         </div>
@@ -644,22 +731,38 @@
             window.confRef70 = confRef70;
             window.confRefNeg70 = confRefNeg70;
 
-            // --- CHART SYNCHRONIZATION (SINGLE OFFSET) ---
-            // Both Hurst and Confidence now push every candle = same bar count.
-            window._mainBarCount = 0;
-            window._indicatorBarCount = 0;
+            // --- CHART SYNCHRONIZATION (TIME-BASED) ---
+            // Use actual timestamps instead of logical indices for perfect sync
+            let isSyncing = false;
 
-            chart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-                if (!range || !window._mainBarCount || !window._indicatorBarCount) return;
-                const offset = window._mainBarCount - window._indicatorBarCount;
-                const adjustedRange = {
-                    from: range.from - offset,
-                    to: range.to - offset
-                };
+            chart.timeScale().subscribeVisibleTimeRangeChange(range => {
+                if (isSyncing || !range) return;
+                isSyncing = true;
                 try {
-                    hurstChart.timeScale().setVisibleLogicalRange(adjustedRange);
-                    window.confidenceChart.timeScale().setVisibleLogicalRange(adjustedRange);
+                    hurstChart.timeScale().setVisibleRange(range);
+                    window.confidenceChart.timeScale().setVisibleRange(range);
                 } catch (e) { /* not ready */ }
+                isSyncing = false;
+            });
+
+            hurstChart.timeScale().subscribeVisibleTimeRangeChange(range => {
+                if (isSyncing || !range) return;
+                isSyncing = true;
+                try {
+                    chart.timeScale().setVisibleRange(range);
+                    window.confidenceChart.timeScale().setVisibleRange(range);
+                } catch (e) { /* not ready */ }
+                isSyncing = false;
+            });
+
+            window.confidenceChart.timeScale().subscribeVisibleTimeRangeChange(range => {
+                if (isSyncing || !range) return;
+                isSyncing = true;
+                try {
+                    chart.timeScale().setVisibleRange(range);
+                    hurstChart.timeScale().setVisibleRange(range);
+                } catch (e) { /* not ready */ }
+                isSyncing = false;
             });
 
             // --- CROSSHAIR SYNCHRONIZATION ---
@@ -894,7 +997,7 @@
                 }
 
                 // 4. Fetch Candles
-                const candlesResp = await fetch(`${API_BASE}/candles?limit=300`);
+                const candlesResp = await fetch(`${API_BASE}/candles?limit=3000`);
                 let candles = [];
                 if (candlesResp.ok) {
                     candles = await candlesResp.json();
@@ -902,8 +1005,10 @@
 
                 // 5. Chart Data Preparation (Standard logic)
                 const masterMap = new Map();
+                const TZ_OFFSET = 18000; // UTC → Colombia (UTC-5)
                 candles.forEach(c => {
-                    masterMap.set(c.time, { time: c.time, price: Number(c.close) || 0 });
+                    const t = c.time - TZ_OFFSET;
+                    masterMap.set(t, { time: t, price: Number(c.close) || 0 });
                 });
 
                 let candleDuration = 60;
@@ -964,13 +1069,15 @@
                 const bbUpperData = [];
                 const bbLowerData = [];
 
+                // Shift analysis timestamps to Colombia time (same as candles)
+                analysisData.forEach(a => { a.time = a.time - TZ_OFFSET; });
                 analysisData.sort((a, b) => a.time - b.time);
 
                 let analysisIdx = 0;
                 let lastValidAnalysis = null;
 
                 sortedItems.forEach((item, idx) => {
-                    const candleStartTime = item.time;
+                    const candleStartTime = item.time; // Already in Colombia time from masterMap
                     const candleEndTime = candleStartTime + candleDuration;
                     if (idx < 3 || idx > sortedItems.length - 3) {
                     }
@@ -1222,12 +1329,14 @@
                 const candles = await response.json();
 
                 if (candles.length > 0) {
-                    candleSeries.setData(candles);
+                    // Shift candle times to Colombia (UTC-5)
+                    const candlesCOL = candles.map(c => ({ ...c, time: c.time - 18000 }));
+                    candleSeries.setData(candlesCOL);
                     window._mainBarCount = candles.length; // Track for sync offset
 
                     // Feed overlay series with candle close prices (invisible line, for marker z-ordering)
                     if (window.markerOverlay) {
-                        window.markerOverlay.setData(candles.map(c => ({ time: c.time, value: c.close })));
+                        window.markerOverlay.setData(candles.map(c => ({ time: c.time - 18000, value: c.close })));
                     }
 
                     // Fetch recent trades and add markers
@@ -1238,7 +1347,7 @@
                             const markers = trades
                                 .filter(t => t.entry_time)
                                 .map(t => {
-                                    const time = Math.floor(new Date(t.entry_time).getTime() / 1000);
+                                    const time = Math.floor(new Date(t.entry_time).getTime() / 1000) - 18000; // UTC → Colombia
                                     const isCall = t.direction === 'CALL';
                                     const pnl = t.pnl != null ? `$${t.pnl.toFixed(2)}` : '';
                                     return {
@@ -1535,11 +1644,17 @@
                                 <th>Stake</th>
                                 <th>Outcome</th>
                                 <th>P&L</th>
+                                <th>Hurst</th>
+                                <th>Groq</th>
                                 <th>Duration</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${trades.map(trade => `
+                            ${trades.map(trade => {
+                    const h = trade.hurst;
+                    const hColor = h == null ? '#666' : h >= 0.65 ? '#22c55e' : h >= 0.55 ? '#eab308' : '#ef4444';
+                    const hLabel = h == null ? '-' : h.toFixed(3);
+                    return `
                                 <tr>
                                     <td>${formatTime(trade.entry_time)}</td>
                                     <td><span class="direction-${trade.direction.toLowerCase()}">${trade.direction}</span></td>
@@ -1548,9 +1663,11 @@
                                     <td>$${trade.stake.toFixed(2)}</td>
                                     <td><span class="outcome-${trade.outcome.toLowerCase()}">${trade.outcome}</span></td>
                                     <td class="${trade.pnl >= 0 ? 'positive' : 'negative'}">$${trade.pnl.toFixed(2)}</td>
+                                    <td style="color: ${hColor}; font-weight: 600;">${hLabel}</td>
+                                    <td>${trade.groq_used ? '🧠' : '—'}</td>
                                     <td>${formatDuration(trade.duration_seconds || 0)}</td>
                                 </tr>
-                            `).join('')}
+                            `}).join('')}
                         </tbody>
                     </table>
                 `;
@@ -1699,10 +1816,55 @@
             fetchAndUpdateIndicators();  // Update indicators
         }, 5000);
 
+        // --- L1 vs Groq Scorecard ---
+        async function fetchScorecard() {
+            try {
+                const resp = await fetch(`${API_BASE}/decision-tracker`);
+                const data = await resp.json();
+
+                document.getElementById('l1WinRate').textContent = data.total_decisions > 0 ? data.l1_win_rate + '%' : '--';
+                document.getElementById('groqWinRate').textContent = (data.groq_wins + data.groq_losses) > 0 ? data.groq_win_rate + '%' : '--';
+                document.getElementById('groqSaved').textContent = data.groq_saved || 0;
+                document.getElementById('groqMissed').textContent = data.groq_missed || 0;
+                document.getElementById('totalDecisions').textContent = (data.total_tracked || 0) + ' tracked, ' + (data.total_decisions || 0) + ' resolved';
+                document.getElementById('l1Record').textContent = `${data.l1_wins}W/${data.l1_losses}L`;
+                document.getElementById('groqRecord').textContent = `${data.groq_wins}W/${data.groq_losses}L/${data.groq_skipped}S`;
+
+                const tbody = document.getElementById('decisionTableBody');
+                if (data.decisions && data.decisions.length > 0) {
+                    tbody.innerHTML = data.decisions.map(d => {
+                        const time = d.time ? new Date(d.time).toLocaleTimeString() : '--';
+                        const l1Color = d.l1_signal === 'CALL' ? '#00ffaa' : '#ff4500';
+                        const groqColor = d.groq_signal === 'CALL' ? '#00ffaa' : d.groq_signal === 'PUT' ? '#ff4500' : '#fbbf24';
+                        const l1ResColor = d.l1_hypothetical === 'WIN' ? '#10b981' : d.l1_hypothetical === 'LOSS' ? '#ef4444' : '#6b7280';
+                        const groqResColor = d.groq_result === 'WIN' ? '#10b981' : d.groq_result === 'LOSS' ? '#ef4444' : d.groq_result === 'SKIPPED' ? '#fbbf24' : '#6b7280';
+                        const priceColor = d.price_change >= 0 ? '#10b981' : '#ef4444';
+                        return `<tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                            <td style="padding: 4px; color: #9ca3af;">${time}</td>
+                            <td style="padding: 4px; text-align: center; color: ${l1Color}; font-weight: bold;">${d.l1_signal}</td>
+                            <td style="padding: 4px; text-align: center; color: ${groqColor}; font-weight: bold;">${d.groq_signal}</td>
+                            <td style="padding: 4px; text-align: right; color: ${priceColor};">${d.price_change >= 0 ? '+' : ''}${d.price_change.toFixed(2)}</td>
+                            <td style="padding: 4px; text-align: center; color: ${l1ResColor}; font-weight: bold;">${d.l1_hypothetical || '⏳'}</td>
+                            <td style="padding: 4px; text-align: center; color: ${groqResColor}; font-weight: bold;">${d.groq_result || '⏳'}</td>
+                        </tr>`;
+                    }).join('');
+                }
+            } catch (e) {
+                console.debug('Scorecard fetch error:', e);
+            }
+        }
+
+        fetchScorecard();
+
         // Refresh historical chart every 5 minutes (data doesn't change often)
         setInterval(() => {
             fetchAndUpdateHistoricalChart();
         }, 300000);
+
+        // Refresh scorecard every 30 seconds
+        setInterval(() => {
+            fetchScorecard();
+        }, 30000);
     </script>
 </body>
 

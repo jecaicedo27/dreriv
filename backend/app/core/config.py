@@ -51,11 +51,12 @@ class Settings(BaseSettings):
     MAX_CONCURRENT_TRADES: int = 3
     MAX_CORRELATED_TRADES: int = 2
     MAX_TRADES_PER_DAY: int = 40
-    COOLDOWN_AFTER_LOSSES: int = 3
-    COOLDOWN_MINUTES: int = 15
+    COOLDOWN_AFTER_LOSSES: int = 10
+    COOLDOWN_MINUTES: int = 5
+    MIN_STAKE: float = 10.0  # Minimum stake during progressive reduction
     
     # Feature Flags
-    USE_GROQ_LAYER2: bool = False  # Toggle AI meta-analysis layer
+    USE_GROQ_LAYER2: bool = True  # Groq decides on L1 signals
     ENABLE_PGVECTOR: bool = False
     ENABLE_AB_TESTING: bool = True
     ENABLE_DRAWDOWN_RECOVERY: bool = True

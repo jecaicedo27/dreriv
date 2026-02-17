@@ -100,6 +100,9 @@ class TradingBot:
         self.is_running = True
         deriv_client.running = True  # Enable message handler for trading responses
         
+        # Start settlement loop
+        asyncio.create_task(self._check_trades_loop())
+        
         # Start main loop
         logger.success("✅ Bot started - entering main loop")
         await self._main_loop()
@@ -241,6 +244,13 @@ class TradingBot:
                 logger.warning("⚠️ Not enough candle data yet")
                 return
             
+            # Resolve pending decision comparisons
+            try:
+                from app.services.decision_tracker import resolve_pending
+                resolve_pending(self.db)
+            except Exception as e:
+                logger.debug(f"Decision resolver: {e}")
+            
             # Run Layer 1 analysis
             signal = self.signal_engine.analyze(df, self.symbol)
             
@@ -248,34 +258,97 @@ class TradingBot:
             logger.info(f"💡 Reasoning: {signal['reasoning']}")
             
             # Layer 2: Groq AI meta-analysis (if enabled)
+            # ARCHITECTURE: Groq is the FINAL decision maker
+            # It receives ALL L1 technical data and makes its own decision
+            # L1 filters (RSI, momentum, etc.) inform Groq but don't block it
+            
+            l1_signal = signal.get('final_signal', 'HOLD')
+            hurst_regime = signal.get('hurst_signal', {}).get('regime', 'UNKNOWN')
+            hurst_value = signal.get('hurst_signal', {}).get('hurst', 0.5)
+            
+            # Call Groq ONLY when L1 has a directional signal
+            # L1 is the gatekeeper — if L1 says HOLD, we HOLD
+            should_call_groq = l1_signal in ['CALL', 'PUT']
+            
             if settings.USE_GROQ_LAYER2:
-                try:
-                    from app.analysis.layer2_groq import get_layer2_engine
-                    layer2 = get_layer2_engine()
+                if should_call_groq:
+                    try:
+                        from app.analysis.layer2_groq import get_layer2_engine
+                        layer2 = get_layer2_engine()
+                        
+                        # Get candles for context (30 for better trend visibility)
+                        candles = self.db.query(Candle).order_by(Candle.open_time.desc()).limit(30).all()
+                        candles.reverse()
+                        
+                        logger.info(f"🚀 Triggering Groq Analysis (L1: {l1_signal}, Hurst: {hurst_value:.3f}, Regime: {hurst_regime})")
+                        
+                        # Run Layer 2 analysis — Groq sees ALL L1 data and decides
+                        signal = await layer2.analyze(
+                            layer1_signal=signal,
+                            candles=candles,
+                            db=self.db
+                        )
+                        
+                        logger.success(
+                            f"🧠 Layer 2 (Groq) Final: {signal['decision']} "
+                            f"(confidence: {signal['confidence']:.2%})"
+                        )
+                    except Exception as e:
+                        logger.error(f"❌ Layer 2 error, falling back to Layer 1: {e}")
+                        # signal remains unchanged (Layer 1 only)
                     
-                    # Get candles for context
-                    candles = self.db.query(Candle).order_by(Candle.open_time.desc()).limit(10).all()
-                    candles.reverse()
+                    # --- Save L1 vs Groq decision for comparison ---
+                    try:
+                        from app.services.decision_tracker import save_decision
+                        groq_decision_signal = signal.get('decision', signal.get('final_signal', 'HOLD'))
+                        groq_decision_conf = signal.get('confidence', signal.get('final_confidence', 0))
+                        save_decision(
+                            db=self.db,
+                            entry_price=signal.get('current_price', 0),
+                            l1_signal=l1_signal,
+                            l1_confidence=signal.get('layer1_confidence', signal.get('final_confidence', 0)),
+                            groq_signal=groq_decision_signal,
+                            groq_confidence=groq_decision_conf,
+                            duration=signal.get('duration', 300)
+                        )
+                    except Exception as e:
+                        logger.error(f"❌ Failed to track decision: {e}")
                     
-                    # Run Layer 2 analysis
-                    signal = await layer2.analyze(
-                        layer1_signal=signal,
-                        candles=candles,
-                        db=self.db
-                    )
-                    
-                    logger.success(
-                        f"🧠 Layer 2 (Groq) Final: {signal['decision']} "
-                        f"(confidence: {signal['confidence']:.2%})"
-                    )
-                    
-                except Exception as e:
-                    logger.error(f"❌ Layer 2 error, falling back to Layer 1: {e}")
-                    # signal remains unchanged (Layer 1 only)
+                else:
+                    logger.info(f"💤 Market not trending (Hurst={hurst_value:.3f}) — Skipping Groq")
+                    # No connection made to Groq API
+
             
             # Execute trade if signal is strong enough
             final_decision = signal.get('decision', signal.get('final_signal'))
             final_confidence = signal.get('confidence', signal.get('final_confidence', 0))
+
+            # --- SAVE ANALYSIS HISTORY FOR CHART ---
+            try:
+                from app.models.models import AnalysisHistory
+                
+                # Extract metrics safely (handle both L1 and L2 structures)
+                hurst_sig = signal.get('hurst_signal', {})
+                ou_sig = signal.get('ou_signal', {})
+                
+                history_entry = AnalysisHistory(
+                    timestamp=datetime.utcnow(), # Use UTC to match DB convention
+                    symbol=self.symbol,
+                    hurst_value=hurst_sig.get('hurst'),
+                    hurst_regime=hurst_sig.get('regime'),
+                    ou_signal=ou_sig.get('signal'),
+                    ou_deviation=ou_sig.get('deviation'),
+                    ou_confidence=ou_sig.get('confidence'),
+                    final_signal=final_decision,
+                    final_confidence=final_confidence,
+                    current_price=signal.get('current_price'),
+                    duration=signal.get('duration', 300)
+                )
+                self.db.add(history_entry)
+                self.db.commit()
+            except Exception as e:
+                logger.error(f"⚠️ Failed to save AnalysisHistory: {e}")
+            # ---------------------------------------
             
             if final_decision in ['CALL', 'PUT']:
                 # Minimum confidence threshold
@@ -297,8 +370,27 @@ class TradingBot:
             else:
                 logger.info("⏸️ No trading signal - HOLD")
                 
+                logger.info("⏸️ No trading signal - HOLD")
+                
         except Exception as e:
             logger.error(f"❌ Analysis error: {e}")
+            
+    async def _check_trades_loop(self):
+        """
+        Background task to check pending trades
+        """
+        logger.info("🔄 Starting trade settlement loop...")
+        while self.is_running:
+            try:
+                # Check pending trades
+                await self.trade_executor.check_pending_trades()
+                
+                # Sleep
+                await asyncio.sleep(60)
+                
+            except Exception as e:
+                logger.error(f"❌ Error in trade settlement loop: {e}")
+                await asyncio.sleep(60)
     
     async def stop(self):
         """Stop the trading bot gracefully"""

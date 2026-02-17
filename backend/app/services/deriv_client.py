@@ -26,8 +26,9 @@ class DerivWebSocketClient:
     Persistent WebSocket client for Deriv API v3
     """
     
-    def __init__(self):
-        self.url = f"wss://ws.derivws.com/websockets/v3?app_id={settings.DERIV_APP_ID}"
+    def __init__(self, app_id: int = None):
+        actual_app_id = app_id or settings.DERIV_APP_ID
+        self.url = f"wss://ws.derivws.com/websockets/v3?app_id={actual_app_id}"
         self.ws: Optional[websockets.WebSocketClientProtocol] = None
         self.is_connected = False
         self.is_authorized = False
@@ -60,12 +61,18 @@ class DerivWebSocketClient:
         Establish WebSocket connection
         """
         try:
+            import ssl
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
             logger.info(f"🔌 Connecting to Deriv WebSocket... (App ID: {settings.DERIV_APP_ID})")
             self.ws = await websockets.connect(
                 self.url,
                 ping_interval=20,
                 ping_timeout=10,
-                close_timeout=10
+                close_timeout=10,
+                ssl=ssl_context
             )
             self.is_connected = True
             self.connection_failures = 0
@@ -128,13 +135,14 @@ class DerivWebSocketClient:
                 del self.pending_requests[req_id]
             return {}
     
-    async def authorize(self):
+    async def authorize(self, api_token: str = None):
         """
-        Authorize with API token
+        Authorize with API token. Uses provided token or falls back to settings.
         """
         try:
+            token = api_token or settings.DERIV_API_TOKEN
             request = {
-                "authorize": settings.DERIV_API_TOKEN
+                "authorize": token
             }
             # Use send_request pattern
             response = await self.send_request(request)
@@ -193,7 +201,7 @@ class DerivWebSocketClient:
     
     async def subscribe_to_candles(self, symbol: str, granularity: int = 60):
         """
-        Subscribe to OHLC candles
+        Subscribe to OHLC candles. Returns the response containing historical candles.
         """
         try:
             request = {
@@ -210,14 +218,14 @@ class DerivWebSocketClient:
             
             if "candles" in response or "ohlc" in response:
                 logger.success(f"✅ Subscribed to {symbol} candles ({granularity}s)")
-                return True
+                return response
             else:
                 logger.error(f"❌ Candle subscription failed: {response}")
-                return False
+                return None
                 
         except Exception as e:
             logger.error(f"❌ Candle subscription error: {e}")
-            return False
+            return None
     
     async def buy_contract(
         self,
@@ -262,6 +270,118 @@ class DerivWebSocketClient:
                 
         except Exception as e:
             logger.error(f"❌ Trade execution error: {e}")
+            return None
+
+    async def buy_accumulator(
+        self,
+        symbol: str,
+        amount: float,
+        growth_rate: float = 0.02,
+        take_profit: float = None
+    ):
+        """
+        Buy an Accumulator (ACCU) contract.
+        No duration needed - contract stays open until barrier is hit or sold.
+        
+        Args:
+            symbol: e.g. 'BOOM1000'
+            amount: Stake in USD
+            growth_rate: 0.01 to 0.05 (1% to 5%)
+            take_profit: Optional take profit amount in USD
+        """
+        try:
+            params = {
+                "contract_type": "ACCU",
+                "symbol": symbol,
+                "amount": float(amount),
+                "growth_rate": growth_rate,
+                "basis": "stake",
+                "currency": "USD"
+            }
+
+            if take_profit:
+                params["limit_order"] = {
+                    "take_profit": float(take_profit)
+                }
+
+            request = {
+                "buy": "1",
+                "price": float(amount),
+                "subscribe": 1,
+                "parameters": params
+            }
+
+            logger.info(f"🎰 Buying ACCU: {symbol} ${amount} @ {growth_rate*100}% growth"
+                        f"{f' TP=${take_profit}' if take_profit else ''}")
+
+            response = await self.send_request(request)
+
+            if "buy" in response:
+                contract = response["buy"]
+                contract_id = contract["contract_id"]
+                buy_price = contract["buy_price"]
+                logger.success(f"✅ ACCU Contract opened - ID: {contract_id}, Price: {buy_price}")
+                return contract
+            else:
+                error_msg = response.get('error', {}).get('message', str(response))
+                logger.error(f"❌ ACCU buy failed: {error_msg}")
+                return None
+
+        except Exception as e:
+            logger.error(f"❌ ACCU buy error: {e}")
+            return None
+
+    async def sell_contract(self, contract_id: int, price: float = 0):
+        """
+        Sell/close an open contract early.
+        
+        Args:
+            contract_id: The contract to sell
+            price: Minimum acceptable sell price (0 = sell at market)
+        """
+        try:
+            request = {
+                "sell": int(contract_id),
+                "price": float(price)
+            }
+
+            response = await self.send_request(request)
+
+            if "sell" in response:
+                sell_data = response["sell"]
+                sold_for = sell_data.get("sold_for", 0)
+                logger.success(f"✅ Contract {contract_id} sold for ${sold_for}")
+                return sell_data
+            else:
+                error_msg = response.get('error', {}).get('message', str(response))
+                logger.error(f"❌ Sell failed: {error_msg}")
+                return None
+
+        except Exception as e:
+            logger.error(f"❌ Sell error: {e}")
+            return None
+
+    async def get_contract_status(self, contract_id: int):
+        """
+        Get current status of a contract
+        """
+        try:
+            request = {
+                "proposal_open_contract": 1,
+                "contract_id": int(contract_id)
+            }
+            
+            # Use send_request pattern
+            response = await self.send_request(request)
+            
+            if "proposal_open_contract" in response:
+                return response["proposal_open_contract"]
+            else:
+                logger.error(f"❌ Failed to get contract status: {response}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ Get contract status error: {e}")
             return None
     
     async def heartbeat_loop(self):

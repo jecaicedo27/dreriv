@@ -30,6 +30,7 @@ class TechnicalIndicators:
         try:
             # Moving Averages (simple EMA calculation)
             df['ema_9'] = df['close'].ewm(span=9, adjust=False).mean()
+            df['ema_20'] = df['close'].ewm(span=20, adjust=False).mean()
             df['ema_21'] = df['close'].ewm(span=21, adjust=False).mean()
             df['ema_50'] = df['close'].ewm(span=50, adjust=False).mean()
             
@@ -80,6 +81,22 @@ class TechnicalIndicators:
             # Price position within range (0 = at low, 1 = at high)
             df['price_position'] = (df['close'] - df['low']) / (df['high'] - df['low'] + 1e-10)
             
+            # EMA Crossover Analysis
+            df['ema_21_above_50'] = (df['ema_21'] > df['ema_50']).astype(int)
+            # Detect crossover points (value changes from 0→1 or 1→0)
+            df['ema_cross_event'] = df['ema_21_above_50'].diff().abs()
+            # Count bars since last crossover (cumulative count resetting at each cross)
+            cross_groups = df['ema_cross_event'].cumsum()
+            df['ema_cross_age'] = df.groupby(cross_groups).cumcount()
+            # EMA separation and its rate of change
+            df['ema_gap'] = df['ema_21'] - df['ema_50']
+            df['ema_gap_rate'] = df['ema_gap'].diff(3)  # Change over 3 bars
+            # Diverging = gap growing in the direction of the trend
+            df['ema_diverging'] = (
+                ((df['ema_gap'] > 0) & (df['ema_gap_rate'] > 0)) |  # Bullish & widening
+                ((df['ema_gap'] < 0) & (df['ema_gap_rate'] < 0))    # Bearish & widening
+            ).astype(int)
+            
             logger.debug(f"✅ Calculated indicators for {len(df)} candles")
             return df
             
@@ -99,6 +116,7 @@ class TechnicalIndicators:
         
         return {
             'ema_9': float(latest.get('ema_9', 0)),
+            'ema_20': float(latest.get('ema_20', 0)),
             'ema_21': float(latest.get('ema_21', 0)),
             'ema_50': float(latest.get('ema_50', 0)),
             'rsi_14': float(latest.get('rsi_14', 0)),
@@ -112,5 +130,10 @@ class TechnicalIndicators:
             'returns': float(latest.get('returns', 0)),
             'momentum_5': float(latest.get('momentum_5', 0)),
             'volatility_realized': float(latest.get('volatility_realized', 0)),
-            'price_position': float(latest.get('price_position', 0))
+            'price_position': float(latest.get('price_position', 0)),
+            # EMA Crossover metrics
+            'ema_cross_direction': 'BULLISH' if int(latest.get('ema_21_above_50', 0)) == 1 else 'BEARISH',
+            'ema_cross_age': int(latest.get('ema_cross_age', 0)),
+            'ema_diverging': bool(int(latest.get('ema_diverging', 0))),
+            'ema_separation_rate': float(latest.get('ema_gap_rate', 0)),
         }

@@ -431,9 +431,8 @@ async def bot_step(
         final_confidence = l1_confidence
         groq_reasoning = ""
 
-        should_call_groq = use_groq and (
-            l1_signal in ['CALL', 'PUT'] or hurst_value >= 0.55
-        )
+        # Groq ONLY when L1 has directional signal — L1 is gatekeeper
+        should_call_groq = use_groq and l1_signal in ['CALL', 'PUT']
 
         if should_call_groq:
             try:

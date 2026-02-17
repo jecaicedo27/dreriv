@@ -114,6 +114,7 @@ class Trade(Base):
     # Risk management
     kelly_fraction = Column(Numeric(6, 4))
     drawdown_multiplier = Column(Numeric(6, 4), default=1.0)
+    hurst_at_entry = Column(Numeric(6, 4))
     
     # Deriv contract reference
     deriv_contract_id = Column(String(50))
@@ -152,6 +153,49 @@ class BotState(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class AnalysisHistory(Base):
+    """Historical analysis metrics for chart visualization"""
+    __tablename__ = "analysis_history"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
+    symbol = Column(String(50), nullable=False, default='R_100', index=True)
+    
+    # Hurst metrics
+    hurst_value = Column(Numeric(6, 4))
+    hurst_regime = Column(String(50))
+    
+    # O-U metrics
+    ou_signal = Column(String(10))
+    ou_deviation = Column(Numeric(10, 4))
+    ou_confidence = Column(Numeric(5, 4))
+    ou_theta = Column(Numeric(10, 6))
+    ou_half_life = Column(Numeric(10, 2))
+    
+    # GARCH metrics
+    garch_regime = Column(String(50))
+    garch_current_vol = Column(Numeric(10, 6))
+    garch_forecast_vol = Column(Numeric(10, 6))
+    garch_stake_multiplier = Column(Numeric(5, 2))
+    
+    # Final signal
+    final_signal = Column(String(10))
+    final_confidence = Column(Numeric(5, 4))
+    contract_type = Column(String(50))
+    duration = Column(Integer)
+    
+    # Price context
+    current_price = Column(Numeric(12, 2))
+    
+    # Technical indicators
+    rsi_14 = Column(Numeric(6, 2))
+    ema_9 = Column(Numeric(12, 2))
+    ema_21 = Column(Numeric(12, 2))
+    macd = Column(Numeric(12, 6))
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 # Additional models (simplified for now)
 class GroqDecisionLog(Base):
     """Groq AI decision logging"""
@@ -173,3 +217,24 @@ class GroqDecisionLog(Base):
     response_time_ms = Column(Integer)
     tokens_used = Column(Integer)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class DecisionComparison(Base):
+    """Track L1 vs Groq decisions and hypothetical outcomes"""
+    __tablename__ = "decision_comparisons"
+    
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    entry_price = Column(Numeric(12, 5))
+    exit_price = Column(Numeric(12, 5))
+    duration = Column(Integer, default=300)
+    l1_signal = Column(String(10), nullable=False)
+    l1_confidence = Column(Numeric(6, 4))
+    groq_signal = Column(String(10), nullable=False)
+    groq_confidence = Column(Numeric(6, 4))
+    l1_hypothetical = Column(String(10))  # WIN/LOSS
+    groq_result = Column(String(10))      # WIN/LOSS/SKIPPED
+    price_change = Column(Numeric(12, 5))
+    resolved = Column(Boolean, default=False)
+    resolve_at = Column(DateTime(timezone=True))
+

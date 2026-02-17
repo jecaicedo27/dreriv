@@ -179,33 +179,34 @@ class Layer1SignalEngine:
 
         elif regime == 'TRENDING':
             # ---------------------------------------------------------
-            # TREND FOLLOWING STRATEGY (EMA/MACD Driven)
+            # TREND FOLLOWING STRATEGY
+            # Architecture: L1 determines direction, Groq decides action
+            # Only hard filter: Hurst >= 0.55
+            # Everything else is informative data for Groq
             # ---------------------------------------------------------
-            # Dynamic duration based on trend strength
             hurst_value = hurst_signal.get('hurst', 0.5)
-            trend_strength = abs(hurst_value - 0.5)  # 0 = weak, 0.5 = very strong
+            trend_strength = abs(hurst_value - 0.5)
             
-            # HARDENED THRESHOLDS (Feb 13 Training)
-            # Old: 0.1 (0.60) was too permissive for weak chop
-            # New: 0.15 (0.65) minimum for trending signal
+            duration = 300  # Fixed 5 minutes
             
-            # Fixed duration of 5 minutes (Config #65 optimal)
-            duration = 300
-            
-            # CRITICAL FILTER: Enforce minimum trend strength
-            # 0.10 = Hurst >= 0.60 (more entries, still filters weak chop)
+            # Hard filters: Hurst must be in sweet spot 0.60-0.69
+            # Data shows: 0.60-0.69 = 60% WR (+$3,329) | 0.70+ = 38.8% WR (-$3,163)
             if trend_strength < 0.10:
-                 reasoning.append(f"Trend too weak (Hurst={hurst_value:.3f}, str={trend_strength:.3f} < 0.10) - HOLD")
+                 reasoning.append(f"Trend too weak (Hurst={hurst_value:.3f}) - HOLD")
+                 return self._hold_response(reasoning)
+            if trend_strength >= 0.20:
+                 reasoning.append(f"Trend overextended (Hurst={hurst_value:.3f}) - late entry risk - HOLD")
                  return self._hold_response(reasoning)
 
-            reasoning.append(f"Trending (Hurst={hurst_value:.3f}) → Fixed Duration: {duration}s")
+            reasoning.append(f"Trending (Hurst={hurst_value:.3f}) → Duration: {duration}s")
             
-            # Multi-indicator trend detection (prevents false signals)
+            # --- Gather ALL indicators (informative for Groq) ---
             ema_9 = indicators.get('ema_9', 0)
             ema_21 = indicators.get('ema_21', 0)
             ema_50 = indicators.get('ema_50', 0)
             rsi = indicators.get('rsi_14', 50)
             macd_hist = indicators.get('macd_histogram', 0)
+            momentum_5 = indicators.get('momentum_5', 0)
             
             # Bollinger Bands
             bb_upper = indicators.get('bollinger_upper', 0)
@@ -214,26 +215,20 @@ class Layer1SignalEngine:
             bb_width = (bb_upper - bb_lower) / (bb_middle + 1e-10) if bb_middle else 0
             bb_position = (current_price - bb_lower) / (bb_upper - bb_lower + 1e-10) if (bb_upper - bb_lower) > 0 else 0.5
             
-            # --- EMA CROSSOVER CONFIRMATION (Feb 15 Training) ---
-            # Prevents premature entries before crossover is confirmed
+            # EMA crossover info (informative, NOT blocking)
             ema_cross_age = indicators.get('ema_cross_age', 0)
             ema_diverging = indicators.get('ema_diverging', False)
             ema_sep_rate = indicators.get('ema_separation_rate', 0)
             ema_cross_dir = indicators.get('ema_cross_direction', 'NEUTRAL')
             
-            # Rule 1: Crossover must persist for ≥2 candles (Config #65)
             if ema_cross_age < 2:
-                reasoning.append(f"EMA crossover too recent ({ema_cross_age} bars < 2 required) - Wait for confirmation - HOLD")
-                return self._hold_response(reasoning)
-            
-            # Rule 2: EMAs must be diverging (gap growing = momentum)
+                reasoning.append(f"⚠️ EMA crossover recent ({ema_cross_age} bars)")
             if not ema_diverging:
-                reasoning.append(f"EMAs converging (gap_rate={ema_sep_rate:.4f}) - Trend losing momentum - HOLD")
-                return self._hold_response(reasoning)
+                reasoning.append(f"⚠️ EMAs converging (gap_rate={ema_sep_rate:.4f})")
             
-            reasoning.append(f"EMA cross confirmed: {ema_cross_dir} age={ema_cross_age} bars, diverging={ema_diverging}")
+            reasoning.append(f"EMA cross: {ema_cross_dir} age={ema_cross_age}, diverging={ema_diverging}")
             
-            # Require at least 2/3 indicators to confirm trend
+            # Determine direction via majority vote
             ema_trend = "BULLISH" if ema_21 > ema_50 else "BEARISH"
             price_trend = "BULLISH" if current_price > ema_50 else "BEARISH"  
             macd_trend = "BULLISH" if macd_hist > 0 else "BEARISH"
@@ -246,133 +241,77 @@ class Layer1SignalEngine:
             
             trend = "BULLISH" if bullish_votes >= 2 else "BEARISH"
             
-            # Calculate trend strength (EMA separation)
+            # EMA separation (informative)
             ema_separation = abs(ema_21 - ema_50) / (ema_50 + 1e-10)
-            trend_conf_bonus = min(ema_separation / 0.01, 0.15)  # Up to +15% confidence
+            trend_conf_bonus = min(ema_separation / 0.01, 0.15)
             
-            # Require minimum trend strength (Config #65: 0.001)
             if ema_separation < 0.001:
-                reasoning.append(f"Trend too weak (EMA sep: {ema_separation:.4f}) - HOLD")
-                return self._hold_response(reasoning)
+                reasoning.append(f"⚠️ EMAs very close (sep={ema_separation:.4f})")
             
             reasoning.append(f"Trend: {trend} (votes: {bullish_votes}/3, EMA21={ema_21:.2f}, EMA50={ema_50:.2f}, MACD={macd_hist:.4f})")
             
-            # --- BOLLINGER BANDS ANALYSIS ---
-            bb_squeeze = bb_width < 0.005  # Bands very tight = volatility compression
-            bb_expanding = bb_width > 0.008  # Bands wide = strong move underway
-            
+            # BB analysis (informative)
+            bb_squeeze = bb_width < 0.005
+            bb_expanding = bb_width > 0.008
             if bb_squeeze:
-                reasoning.append(f"BB Squeeze detected (width={bb_width:.4f}) — breakout imminent")
+                reasoning.append(f"BB Squeeze (width={bb_width:.4f})")
             elif bb_expanding:
-                reasoning.append(f"BB Expanding (width={bb_width:.4f}) — strong momentum")
+                reasoning.append(f"BB Expanding (width={bb_width:.4f})")
             else:
                 reasoning.append(f"BB Normal (width={bb_width:.4f}, pos={bb_position:.2f})")
             
+            # Set signal direction based on trend
+            confidence = min(0.60 + trend_conf_bonus, 0.85)
+            
             if trend == 'BULLISH':
-                # Looking for CALLs (Dip buying or Breakout)
-                
-                # CRITICAL: Price must be above BOTH EMAs for full breakout confirmation
-                if current_price < ema_50:
-                    reasoning.append(f"Price ({current_price:.2f}) < EMA50 ({ema_50:.2f}) - No full breakout - HOLD")
-                    return self._hold_response(reasoning)
-                
-                # Price must also be above EMA21 (Counter-momentum check)
-                if current_price < ema_21:
-                    reasoning.append(f"Trend BULLISH but Price ({current_price:.2f}) < EMA21 ({ema_21:.2f}) - Wait for pullback/breakout - HOLD")
-                    return self._hold_response(reasoning)
-                
-                # --- EXHAUSTION INDICATORS (informative, not blocking) ---
-                # These reduce confidence and add notes for Groq to evaluate
-                
                 signal = 'CALL'
-                confidence = min(0.80 + trend_conf_bonus, 0.95)
+                contract_type = 'CALL'
+                price_dist_pct = (current_price - ema_21) / ema_21 * 100 if ema_21 else 0
                 
-                # 1. RSI overbought warning
+                # Informative warnings (reduce confidence, Groq sees all)
+                if current_price < ema_50:
+                    reasoning.append(f"⚠️ Price ({current_price:.2f}) < EMA50 ({ema_50:.2f})")
+                    confidence = max(confidence - 0.10, 0.55)
+                if current_price < ema_21:
+                    reasoning.append(f"⚠️ Price ({current_price:.2f}) < EMA21 ({ema_21:.2f})")
+                    confidence = max(confidence - 0.05, 0.55)
                 if rsi >= 80:
                     confidence = max(confidence - 0.15, 0.55)
-                    reasoning.append(f"⚠️ RSI {rsi:.1f} >= 80 - Overbought, reversal risk (conf -{15}%)")
-                elif rsi >= 70:
-                    confidence = max(confidence - 0.05, 0.60)
-                    reasoning.append(f"⚠️ RSI {rsi:.1f} >= 70 - Approaching overbought (conf -5%)")
-                
-                # 2. Price overextended from EMA21
-                price_dist_pct = (current_price - ema_21) / ema_21 * 100
+                    reasoning.append(f"⚠️ RSI {rsi:.1f} overbought")
                 if price_dist_pct > 1.5:
                     confidence = max(confidence - 0.10, 0.55)
-                    reasoning.append(f"⚠️ Price overextended from EMA21 ({price_dist_pct:.2f}% > 1.5%) (conf -10%)")
-                
-                # 3. Momentum decelerating
-                momentum_5 = indicators.get('momentum_5', 0)
+                    reasoning.append(f"⚠️ Price overextended +{price_dist_pct:.2f}% from EMA21")
                 if momentum_5 < 0:
-                    confidence = max(confidence - 0.10, 0.55)
-                    reasoning.append(f"⚠️ 5-bar momentum negative ({momentum_5:.2f}) - Decelerating (conf -10%)")
-                
-                # Bollinger Band confidence adjustment for CALL
-                if bb_position > 0.7 and bb_expanding:
-                    confidence = min(confidence + 0.05, 0.95)
-                    reasoning.append(f"BB boost: price riding upper band (pos={bb_position:.2f})")
-                elif bb_squeeze:
-                    confidence = min(confidence + 0.03, 0.95)
-                    reasoning.append(f"BB boost: squeeze breakout")
-                elif bb_position < 0.3:
                     confidence = max(confidence - 0.05, 0.55)
-                    reasoning.append(f"BB caution: price near lower band in bullish trend (pos={bb_position:.2f})")
-                
-                contract_type = 'CALL'
-                reasoning.append(f"CALL signal (RSI={rsi:.1f}, dist={price_dist_pct:.2f}%, mom5={momentum_5:.2f}) conf={confidence:.0%}")
+                    reasoning.append(f"⚠️ Momentum decelerating ({momentum_5:.2f})")
                     
             elif trend == 'BEARISH':
-                # Looking for PUTs
-                
-                # CRITICAL: Price must be below BOTH EMAs for full breakdown confirmation
-                if current_price > ema_50:
-                    reasoning.append(f"Price ({current_price:.2f}) > EMA50 ({ema_50:.2f}) - No full breakdown - HOLD")
-                    return self._hold_response(reasoning)
-                
-                # Price must also be below EMA21 (Counter-trend check)
-                if current_price > ema_21:
-                    reasoning.append(f"Trend BEARISH but Price ({current_price:.2f}) > EMA21 ({ema_21:.2f}) - Counter-trend spike - HOLD")
-                    return self._hold_response(reasoning)
-                
-                # --- EXHAUSTION INDICATORS (informative, not blocking) ---
-                # These reduce confidence and add notes for Groq to evaluate
-                
                 signal = 'PUT'
-                confidence = min(0.80 + trend_conf_bonus, 0.95)
+                contract_type = 'PUT'
+                price_dist_pct = (ema_21 - current_price) / ema_21 * 100 if ema_21 else 0
                 
-                # 1. RSI oversold warning
+                # Informative warnings (reduce confidence, Groq sees all)
+                if current_price > ema_50:
+                    reasoning.append(f"⚠️ Price ({current_price:.2f}) > EMA50 ({ema_50:.2f})")
+                    confidence = max(confidence - 0.10, 0.55)
+                if current_price > ema_21:
+                    reasoning.append(f"⚠️ Price ({current_price:.2f}) > EMA21 ({ema_21:.2f})")
+                    confidence = max(confidence - 0.05, 0.55)
                 if rsi <= 20:
                     confidence = max(confidence - 0.15, 0.55)
-                    reasoning.append(f"⚠️ RSI {rsi:.1f} <= 20 - Deeply oversold, bounce risk (conf -15%)")
+                    reasoning.append(f"⚠️ RSI {rsi:.1f} deeply oversold")
                 elif rsi <= 35:
-                    confidence = max(confidence - 0.05, 0.60)
-                    reasoning.append(f"⚠️ RSI {rsi:.1f} <= 35 - Approaching oversold (conf -5%)")
-                
-                # 2. Price overextended below EMA21
-                price_dist_pct = (ema_21 - current_price) / ema_21 * 100
+                    confidence = max(confidence - 0.05, 0.55)
+                    reasoning.append(f"⚠️ RSI {rsi:.1f} approaching oversold")
                 if price_dist_pct > 1.5:
                     confidence = max(confidence - 0.10, 0.55)
-                    reasoning.append(f"⚠️ Price overextended below EMA21 ({price_dist_pct:.2f}% > 1.5%) (conf -10%)")
-                
-                # 3. Momentum decelerating
-                momentum_5 = indicators.get('momentum_5', 0)
+                    reasoning.append(f"⚠️ Price overextended -{price_dist_pct:.2f}% from EMA21")
                 if momentum_5 > 0:
-                    confidence = max(confidence - 0.10, 0.55)
-                    reasoning.append(f"⚠️ 5-bar momentum positive ({momentum_5:.2f}) - Decelerating (conf -10%)")
-                
-                # Bollinger Band confidence adjustment for PUT
-                if bb_position < 0.3 and bb_expanding:
-                    confidence = min(confidence + 0.05, 0.95)
-                    reasoning.append(f"BB boost: price riding lower band (pos={bb_position:.2f})")
-                elif bb_squeeze:
-                    confidence = min(confidence + 0.03, 0.95)
-                    reasoning.append(f"BB boost: squeeze breakdown")
-                elif bb_position > 0.7:
                     confidence = max(confidence - 0.05, 0.55)
-                    reasoning.append(f"BB caution: price near upper band in bearish trend (pos={bb_position:.2f})")
-                
-                contract_type = 'PUT'
-                reasoning.append(f"PUT signal (RSI={rsi:.1f}, dist={price_dist_pct:.2f}%, mom5={momentum_5:.2f}) conf={confidence:.0%}")
+                    reasoning.append(f"⚠️ Momentum decelerating ({momentum_5:.2f})")
+            
+
+
         
         else:
             # Random/Unknown regime

@@ -281,7 +281,9 @@ async def get_recent_trades(limit: int = 20, db: Session = Depends(get_db)):
                 "entry_time": trade.entry_time.isoformat(),
                 "exit_time": trade.exit_time.isoformat() if trade.exit_time else None,
                 "confidence": float(trade.final_confidence) if trade.final_confidence is not None else 0.0,
-                "pnl": float(trade.profit_loss) if trade.profit_loss is not None else 0.0
+                "pnl": float(trade.profit_loss) if trade.profit_loss is not None else 0.0,
+                "hurst": float(trade.hurst_at_entry) if trade.hurst_at_entry is not None else None,
+                "groq_used": bool(trade.layer3_groq_used) if trade.layer3_groq_used is not None else False
             }
             for trade in trades
         ]

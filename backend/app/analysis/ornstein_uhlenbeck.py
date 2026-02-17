@@ -169,7 +169,7 @@ class OrnsteinUhlenbeckModel:
         # Use 1-2 half-lives as duration
         duration = int(self.half_life * 1.5 * 60)  # Convert to seconds
         
-        # Clamp between 1 minute and 15 minutes
-        duration = max(60, min(duration, 900))
+        # Clamp between 1 minute and 1 hour (expanded from 15 min)
+        duration = max(60, min(duration, 3600))
         
         return duration

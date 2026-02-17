@@ -150,7 +150,7 @@ class GroqTradingEngine:
             warnings.append("confidence_capped")
         
         # 4. Confidence threshold for trading
-        if response["confidence"] < 0.70 and response["decision"] != "HOLD":
+        if response["confidence"] < 0.60 and response["decision"] != "HOLD":
             logger.info(f"📉 Low confidence ({response['confidence']}) → forcing HOLD")
             response["decision"] = "HOLD"
             warnings.append("low_confidence_forced_hold")

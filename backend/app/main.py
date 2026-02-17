@@ -32,13 +32,22 @@ async def lifespan(app: FastAPI):
     logger.info(f"🤖 Groq Layer 2 Enabled: {settings.USE_GROQ_LAYER2}")
     logger.info(f"🔍 pgvector Enabled: {settings.ENABLE_PGVECTOR}")
     
-    # Initialize bot
+    # Initialize Rise/Fall bot
     bot = TradingBot()
     app.state.bot = bot
     
-    # Start bot in background
-    logger.info("🎬 Spawning bot background task...")
+    # Start Rise/Fall bot in background
+    logger.info("🎬 Spawning Rise/Fall bot background task...")
     asyncio.create_task(bot.start())
+    
+    # Initialize Accumulator bot (shares memory with API)
+    from app.accu_bot import AccumulatorBot
+    accu_bot = AccumulatorBot()
+    app.state.accu_bot = accu_bot
+    
+    # Start ACCU bot in background
+    logger.info("🎰 Spawning Accumulator bot background task...")
+    asyncio.create_task(accu_bot.start())
     
     logger.success("✅ Application started successfully")
     
@@ -48,6 +57,8 @@ async def lifespan(app: FastAPI):
     logger.warning("⏸️  Shutting down application...")
     if hasattr(app.state, "bot"):
         await app.state.bot.stop()
+    if hasattr(app.state, "accu_bot"):
+        await app.state.accu_bot.stop()
     logger.success("✅ Application shutdown complete")
 
 
@@ -94,6 +105,36 @@ async def serve_dashboard():
         )
     return {"error": "Dashboard not found", "path": dashboard_path}
 
+@app.get("/simulations")
+async def serve_simulations():
+    """Serve the simulations/fractal lab page"""
+    sim_path = os.path.join(static_dir, "simulations.html")
+    if os.path.exists(sim_path):
+        return FileResponse(
+            sim_path,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
+    return {"error": "Simulations page not found", "path": sim_path}
+
+@app.get("/accumulators")
+async def serve_accumulators():
+    """Serve the Accumulators bot dashboard"""
+    accu_path = os.path.join(static_dir, "accumulators.html")
+    if os.path.exists(accu_path):
+        return FileResponse(
+            accu_path,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
+    return {"error": "Accumulators page not found", "path": accu_path}
+
 
 @app.get("/health")
 async def health_check():
@@ -129,8 +170,14 @@ async def root():
 
 from app.api import bot_status
 from app.api import analysis_metrics
+from app.api import simulation_api
+from app.api import accu_status
+from app.api import decision_tracker_api
 app.include_router(bot_status.router, prefix="/api", tags=["bot"])
 app.include_router(analysis_metrics.router, prefix="/api", tags=["analysis"])
+app.include_router(simulation_api.router, prefix="/api", tags=["simulation"])
+app.include_router(accu_status.router, prefix="/api", tags=["accumulator"])
+app.include_router(decision_tracker_api.router, prefix="/api", tags=["tracker"])
 
 
 if __name__ == "__main__":
