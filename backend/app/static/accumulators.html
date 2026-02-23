@@ -523,12 +523,15 @@
                 <h2 id="chartTitle">🕯️ BOOM1000 — 1 Min Candles</h2>
                 <div style="display:flex;align-items:center;gap:12px;">
                     <div class="tf-buttons">
+                        <button class="tf-btn" data-granularity="1" onclick="switchTimeframe(1, this)">Tick</button>
                         <button class="tf-btn active" data-granularity="60"
                             onclick="switchTimeframe(60, this)">1m</button>
                         <button class="tf-btn" data-granularity="300" onclick="switchTimeframe(300, this)">5m</button>
                         <button class="tf-btn" data-granularity="3600" onclick="switchTimeframe(3600, this)">1h</button>
                         <button class="tf-btn" data-granularity="86400"
                             onclick="switchTimeframe(86400, this)">1D</button>
+                        <button class="tf-btn" id="chartTypeBtn" onclick="toggleChartType()"
+                            title="Toggle candle/area">📊</button>
                     </div>
                     <span class="price-live" id="livePrice">—</span>
                 </div>
@@ -608,6 +611,8 @@
         let volChart, volHistogram;
         let tradeMarkers = [];
         let allCandles = [];
+        let areaSeries = null;
+        let chartMode = 'candle'; // 'candle' or 'area'
 
         function initCharts() {
             const mainEl = document.getElementById('mainChart');
@@ -624,6 +629,15 @@
                 upColor: '#22c55e', downColor: '#ef4444',
                 borderVisible: false,
                 wickUpColor: '#22c55e', wickDownColor: '#ef4444',
+            });
+
+            // Area series (for tick/line view)
+            areaSeries = mainChart.addAreaSeries({
+                topColor: 'rgba(38, 166, 154, 0.56)',
+                bottomColor: 'rgba(38, 166, 154, 0.04)',
+                lineColor: 'rgba(38, 166, 154, 1)',
+                lineWidth: 2,
+                visible: false,
             });
 
             // Bollinger Bands
@@ -786,20 +800,35 @@
         // TIMEFRAME STATE
         // ============================================
         let currentGranularity = 60;
-        const tfLabels = { 60: '1 Min', 300: '5 Min', 3600: '1 Hour', 86400: '1 Day' };
+        const tfLabels = { 1: 'Tick', 60: '1 Min', 300: '5 Min', 3600: '1 Hour', 86400: '1 Day' };
+        let accuSymbol = 'R_100';
 
         function switchTimeframe(granularity, btn) {
             currentGranularity = granularity;
             chartInitialized = false;
 
             // Update active button
-            document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tf-btn:not(#chartTypeBtn)').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
 
+            // Auto-switch to area for Tick mode
+            if (granularity === 1) {
+                chartMode = 'area';
+                document.getElementById('chartTypeBtn').textContent = '📈';
+            }
+
             // Update chart title
-            document.getElementById('chartTitle').textContent = `🕯️ BOOM1000 — ${tfLabels[granularity]} Candles`;
+            const suffix = granularity === 1 ? 'Ticks' : 'Candles';
+            document.getElementById('chartTitle').textContent = `🕯️ ${accuSymbol} — ${tfLabels[granularity]} ${suffix}`;
 
             // Fetch new data
+            fetchCandles();
+        }
+
+        function toggleChartType() {
+            chartMode = chartMode === 'candle' ? 'area' : 'candle';
+            document.getElementById('chartTypeBtn').textContent = chartMode === 'area' ? '📈' : '📊';
+            chartInitialized = false;
             fetchCandles();
         }
 
@@ -811,8 +840,21 @@
                 if (!candles || candles.length === 0) return;
 
                 allCandles = candles;
-                candleSeries.setData(candles);
-                updateIndicators(candles);
+
+                // Switch between candle and area display
+                const useArea = chartMode === 'area' || currentGranularity === 1;
+                if (useArea) {
+                    candleSeries.setData([]);
+                    areaSeries.setData(candles.map(c => ({ time: c.time, value: c.close })));
+                    candleSeries.applyOptions({ visible: false });
+                    areaSeries.applyOptions({ visible: true });
+                } else {
+                    areaSeries.setData([]);
+                    candleSeries.setData(candles);
+                    areaSeries.applyOptions({ visible: false });
+                    candleSeries.applyOptions({ visible: true });
+                    updateIndicators(candles);
+                }
 
                 // Update live price
                 const last = candles[candles.length - 1];
@@ -850,6 +892,9 @@
         // UI UPDATES
         // ============================================
         function updateStatusUI(d) {
+            // Update symbol
+            if (d.symbol) accuSymbol = d.symbol;
+
             // Status
             const badge = document.getElementById('statusBadge');
             badge.className = 'status-badge ' + (d.is_running ? 'status-running' : 'status-stopped');

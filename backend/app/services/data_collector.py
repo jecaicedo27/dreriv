@@ -148,7 +148,7 @@ class DataCollector:
                 'volume': float(c.volume) if c.volume else 0
             } for c in reversed(candles)])
             
-            # Calculate indicators
+            # Calculate standard indicators
             df = TechnicalIndicators.calculate_all(df)
             
             # Update candles with indicators (only latest ones to avoid overload)
@@ -157,13 +157,80 @@ class DataCollector:
                 if idx < len(df):
                     row = df.iloc[idx]
                     
+                    # EMA
                     candle.ema_9 = row.get('ema_9')
                     candle.ema_21 = row.get('ema_21')
                     candle.ema_50 = row.get('ema_50')
+                    # RSI & ATR
                     candle.rsi_14 = row.get('rsi_14')
+                    candle.stoch_rsi = row.get('stoch_rsi')
                     candle.atr_14 = row.get('atr_14')
+                    candle.adx_14 = row.get('adx_14')
+                    candle.plus_di = row.get('plus_di')
+                    candle.minus_di = row.get('minus_di')
+                    # Returns & Volatility
                     candle.returns = row.get('returns')
                     candle.volatility_realized = row.get('volatility_realized')
+                    # MACD
+                    candle.macd = row.get('macd')
+                    candle.macd_signal = row.get('macd_signal')
+                    candle.macd_histogram = row.get('macd_histogram')
+                    # Bollinger Bands
+                    candle.bollinger_upper = row.get('bollinger_upper')
+                    candle.bollinger_middle = row.get('bollinger_middle')
+                    candle.bollinger_lower = row.get('bollinger_lower')
+                    # Momentum & Price Position
+                    candle.momentum_5 = row.get('momentum_5')
+                    candle.price_position = row.get('price_position')
+                    # Additional indicators needed by engines
+                    candle.momentum_10 = row.get('momentum_10')
+                    candle.log_returns = row.get('log_returns')
+                    candle.volume_delta = row.get('volume_delta')
+            
+            # --- Calculate Hurst + O-U + GARCH for the LATEST candle ---
+            if len(df) >= 200:
+                try:
+                    from app.analysis.hurst import HurstExponent
+                    from app.analysis.ornstein_uhlenbeck import OrnsteinUhlenbeckModel
+                    
+                    prices = df['close']
+                    latest_candle = candles[0]  # Most recent (desc order)
+                    
+                    # Hurst: both slow (R/S, window=200) and fast (VR, window=50)
+                    hurst_val = HurstExponent.calculate(prices, window=200)
+                    hurst_fast = HurstExponent.calculate_fast(prices, window=50)
+                    hurst_hybrid = HurstExponent.get_hybrid_signal(prices, fast_window=50, slow_window=200)
+                    
+                    # O-U deviation
+                    ou_model = OrnsteinUhlenbeckModel(window=200)
+                    ou_dev = 0.0
+                    if ou_model.fit(prices):
+                        ou_dev = ou_model.get_deviation(float(latest_candle.close))
+                    
+                    # GARCH volatility forecast
+                    garch_forecast = None
+                    try:
+                        from app.analysis.garch import GARCHModel
+                        returns_series = df['returns'].dropna()
+                        if len(returns_series) > 50:
+                            garch_model = GARCHModel(window=100)
+                            if garch_model.fit(returns_series):
+                                vol_forecast = garch_model.forecast(horizon=1)
+                                if vol_forecast is not None and len(vol_forecast) > 0:
+                                    garch_forecast = float(vol_forecast[0]) / 100.0  # Convert from % to decimal
+                    except Exception as ge:
+                        logger.debug(f"GARCH calc error: {ge}")
+                    
+                    # Write to latest candle
+                    latest_candle.hurst_exponent = hurst_val
+                    latest_candle.hurst_fast = hurst_fast
+                    latest_candle.ou_deviation = ou_dev
+                    latest_candle.regime = hurst_hybrid.get('regime', 'RANDOM_WALK')
+                    if garch_forecast is not None:
+                        latest_candle.garch_volatility_forecast = garch_forecast
+                    
+                except Exception as he:
+                    logger.debug(f"Hurst/OU calc error: {he}")
             
             self.db.commit()
             

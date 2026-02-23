@@ -571,8 +571,13 @@
 
     <!-- Controls -->
     <div class="controls-bar">
-        <div class="control-group">
-            <label>Fecha</label>
+        <div class="control-group"
+            style="background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.3); border-radius: 8px; padding: 6px 12px;">
+            <div style="display: flex; flex-direction: column; gap: 2px;">
+                <label style="font-size: 0.85rem; color: #818cf8; font-weight: 600;">📅 FECHA</label>
+                <span style="font-size: 0.65rem; color: #94a3b8; line-height: 1.1;">Aplica a simulación individual y
+                    multi-día</span>
+            </div>
             <select id="dateSelect">
                 <option value="">Seleccionar día...</option>
             </select>
@@ -590,6 +595,8 @@
             <button class="btn speed-btn" data-speed="500" onclick="setSpeed(500, this)">×2</button>
             <button class="btn speed-btn" data-speed="200" onclick="setSpeed(200, this)">×5</button>
             <button class="btn speed-btn" data-speed="100" onclick="setSpeed(100, this)">×10</button>
+            <button class="btn speed-btn" data-speed="50" onclick="setSpeed(50, this)">×20</button>
+            <button class="btn speed-btn" data-speed="20" onclick="setSpeed(20, this)">×50</button>
         </div>
 
         <div class="control-group">
@@ -597,12 +604,522 @@
             <button class="btn" id="btnSimBot" onclick="simulateBot()"
                 style="background: linear-gradient(135deg, var(--purple), var(--accent)); color: #fff; border: none;">🤖
                 Simular Bot</button>
+            <button class="btn" id="btnGroqToggle" onclick="toggleGroq()"
+                style="background: linear-gradient(135deg, #10b981, #059669); color: #fff; border: none; font-size: 11px;">🧠
+                IA: ON</button>
+            <select id="aiProviderSelect"
+                style="background: #1e1e2e; color: #cdd6f4; border: 1px solid #585b70; border-radius: 6px; padding: 4px 8px; font-size: 11px; cursor: pointer;">
+                <option value="groq">🟢 Groq (Llama 70B)</option>
+                <option value="openai">🔵 OpenAI (GPT-5.2)</option>
+                <option value="claude">🟣 Claude (Opus 4)</option>
+                <option value="gemini">🟠 Gemini (2.5 Flash)</option>
+            </select>
+            <select id="engineSelect"
+                onchange="if(document.getElementById('multiEngineSelect')) document.getElementById('multiEngineSelect').value = this.value;"
+                style="background: #1e1e2e; color: #f9e2af; border: 1px solid #f9e2af55; border-radius: 6px; padding: 4px 8px; font-size: 11px; cursor: pointer; font-weight: 600;">
+                <option value="original_v1">🧠 Original v1</option>
+                <option value="university_v2">🎓 University v2</option>
+                <option value="bullish_v3">🐂 Bullish v3</option>
+                <option value="bullish_v4" selected>🐂 Bullish v4</option>
+                <option value="bullish_v5">🐂 Ultimate Bull v5</option>
+                <option value="reversal_v5">🎯 Reversal Sniper</option>
+                <option value="bearish_v6">🐻 Bearish v6</option>
+            </select>
+            <script>
+                // Engine presets — loaded from backend (single source of truth)
+                let ENGINE_HURST_PRESETS = {};
+                let ENGINE_BLOCKED_HOURS = {};
+
+                // Fetch engine configs from backend at startup
+                // NOTE: API_BASE is defined later in the page, so compute it here
+                const _presetApiBase = window.location.pathname.includes('/deriv/') ? '/deriv/api' : '/api';
+                fetch(`${_presetApiBase}/simulation/engines`)
+                    .then(r => r.json())
+                    .then(data => {
+                        (data.engines || []).forEach(e => {
+                            ENGINE_HURST_PRESETS[e.name] = {
+                                min: String(e.hurst_min),
+                                max: String(e.hurst_max),
+                                conf_min: Number(e.confidence_min || 0.60).toFixed(2),
+                                conf_max: Number(e.confidence_max || 1.0).toFixed(2),
+                            };
+                            ENGINE_BLOCKED_HOURS[e.name] = e.blocked_hours || [];
+                        });
+                        console.log('✅ Engine presets loaded:', ENGINE_HURST_PRESETS);
+                        // Apply preset for currently selected engine
+                        const es = document.getElementById('engineSelect');
+                        if (es) applyEnginePreset(es.value);
+                    })
+                    .catch(err => console.warn('Could not load engine presets:', err));
+                function applyEnginePreset(engineValue) {
+                    const preset = ENGINE_HURST_PRESETS[engineValue];
+                    if (!preset) return;
+                    // Auto-set hurst
+                    document.getElementById('hurstMinSelect').value = preset.min;
+                    document.getElementById('hurstMaxSelect').value = preset.max;
+                    // Auto-set confidence (hidden inputs)
+                    const confMinEl = document.getElementById('multiConfidence');
+                    const confMaxEl = document.getElementById('multiMaxConfidence');
+                    if (confMinEl) confMinEl.value = preset.conf_min;
+                    if (confMaxEl) confMaxEl.value = preset.conf_max;
+                    // Sync ambos dropdowns
+                    const es = document.getElementById('engineSelect');
+                    const mes = document.getElementById('multiEngineSelect');
+                    if (es) es.value = engineValue;
+                    if (mes) mes.value = engineValue;
+                    // Update hour filter engine label
+                    const engineNames = {
+                        'original_v1': '🧠 Original v1',
+                        'university_v2': '🎓 University v2',
+                        'bullish_v3': '🐂 Bullish v3',
+                        'bullish_v4': '🐂 Bullish v4',
+                        'bullish_v5': '🐂 Ultimate Bull v5',
+                        'reversal_v5': '🎯 Reversal Sniper',
+                        'bearish_v6': '🐻 Bearish v6',
+                    };
+                    const lbl = document.getElementById('hourFilterEngineLabel');
+                    if (lbl) lbl.textContent = engineNames[engineValue] || engineValue;
+                    // Apply blocked hours preset
+                    const blocked = new Set(ENGINE_BLOCKED_HOURS[engineValue] || []);
+                    for (let h = 0; h < 24; h++) {
+                        const btn = document.getElementById(`hourBtn_${h}`);
+                        if (btn) {
+                            btn.dataset.blocked = blocked.has(h) ? '1' : '0';
+                            if (typeof updateHourBtn === 'function') updateHourBtn(btn);
+                        }
+                    }
+                }
+                document.getElementById('engineSelect').addEventListener('change', function () {
+                    applyEnginePreset(this.value);
+                });
+                // Esperar a que multiEngineSelect exista en el DOM
+                setTimeout(function () {
+                    const mes = document.getElementById('multiEngineSelect');
+                    if (mes) {
+                        mes.addEventListener('change', function () {
+                            applyEnginePreset(this.value);
+                        });
+                    }
+                }, 100);
+            </script>
         </div>
 
         <div class="playback-info">
             <span>Vela: <span class="candle-count" id="candleIndex">0</span> / <span id="totalCandles">0</span></span>
             <span id="currentTime">--:--</span>
         </div>
+    </div>
+
+    <!-- Multi-Day Simulation Panel -->
+    <div
+        style="background: linear-gradient(135deg, #1a1a2e, #16213e); border: 1px solid #6c3bd5; border-radius: 12px; padding: 20px; margin: 0 20px 20px 20px;">
+        <h3 style="margin: 0 0 16px 0; font-size: 16px; color: #cdd6f4;">
+            📊 Simulación Multi-Día
+            <span style="font-size: 11px; color: #a6adc8; font-weight: normal; margin-left: 8px;">Backtesting con datos
+                históricos</span>
+        </h3>
+
+        <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+            <!-- SECTION 1: Period -->
+            <div style="background: #181830; border: 1px solid #585b70; border-radius: 8px; padding: 12px 14px;">
+                <div
+                    style="font-size: 10px; color: #89b4fa; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">
+                    📅 Período</div>
+                <div style="display: flex; gap: 10px; align-items: flex-end;">
+                    <div style="display: flex; flex-direction: column; gap: 3px;">
+                        <label style="font-size: 10px; color: #a6adc8;">Desde</label>
+                        <input type="date" id="multiStartDate"
+                            style="background: #1e1e2e; color: #cdd6f4; border: 1px solid #585b70; border-radius: 6px; padding: 5px 8px; font-size: 12px;">
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 3px;">
+                        <label style="font-size: 10px; color: #a6adc8;">Hasta</label>
+                        <input type="date" id="multiEndDate"
+                            style="background: #1e1e2e; color: #cdd6f4; border: 1px solid #585b70; border-radius: 6px; padding: 5px 8px; font-size: 12px;">
+                    </div>
+                </div>
+                <div style="margin-top: 6px; font-size: 9px; color: #585b70; font-style: italic;">↑ Se sincroniza con la
+                    fecha global</div>
+            </div>
+
+            <!-- SECTION 2: Strategy -->
+            <div style="background: #181830; border: 1px solid #f9e2af44; border-radius: 8px; padding: 12px 14px;">
+                <div
+                    style="font-size: 10px; color: #f9e2af; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">
+                    🧠 Estrategia</div>
+                <div style="display: flex; gap: 10px; align-items: flex-end;">
+                    <div style="display: flex; flex-direction: column; gap: 3px;">
+                        <label style="font-size: 10px; color: #f9e2af;">Motor</label>
+                        <select id="multiEngineSelect"
+                            onchange="if(document.getElementById('engineSelect')) { document.getElementById('engineSelect').value = this.value; applyEnginePreset(this.value); }"
+                            style="background: #1e1e2e; color: #f9e2af; border: 1px solid #f9e2af55; border-radius: 6px; padding: 5px 8px; font-size: 12px; cursor: pointer; font-weight: 600;">
+                            <option value="original_v1">🧠 Original v1</option>
+                            <option value="university_v2">🎓 University v2</option>
+                            <option value="bullish_v3">🐂 Bullish v3</option>
+                            <option value="bullish_v4" selected>🐂 Bullish v4</option>
+                            <option value="bullish_v5">🐂 Ultimate Bull v5</option>
+                            <option value="reversal_v5">🎯 Reversal Sniper</option>
+                            <option value="bearish_v6">🐻 Bearish v6</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 3px;">
+                        <label style="font-size: 10px; color: #a6adc8;">Stake</label>
+                        <div
+                            style="background: #1e1e2e; color: #a6e3a1; border: 1px solid #585b70; border-radius: 6px; padding: 5px 8px; font-size: 12px; white-space: nowrap;">
+                            📈 Kelly
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FILTROS: Hidden inputs auto-set from engine presets (single source of truth) -->
+            <div style="display:none;">
+                <select id="multiConfidence">
+                    <option value="0.60" selected>60%</option>
+                </select>
+                <select id="multiMaxConfidence">
+                    <option value="1.00" selected>100%</option>
+                </select>
+                <input type="hidden" id="hurstMinSelect" value="0.0">
+                <input type="hidden" id="hurstMaxSelect" value="1.0">
+            </div>
+
+            <!-- SECTION 4: Actions -->
+            <div style="display: flex; flex-direction: column; gap: 6px; justify-content: flex-end;">
+                <button id="btnMultiSim" onclick="runMultiSim()"
+                    style="background: linear-gradient(135deg, #6c3bd5, #8b5cf6); color: #fff; border: none; border-radius: 8px; padding: 8px 20px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;">
+                    🚀 Simular Rango
+                </button>
+                <button onclick="runMultiSim('all')"
+                    style="background: linear-gradient(135deg, #059669, #10b981); color: #fff; border: none; border-radius: 8px; padding: 8px 20px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;">
+                    🌐 Todos los Datos
+                </button>
+                <button id="btnEngineBattle" onclick="startEngineBattle()"
+                    style="background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; border: none; border-radius: 8px; padding: 8px 20px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;">
+                    ⚔️ Batalla de Motores
+                </button>
+                <button onclick="toggleBattleHistory()"
+                    style="background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff; border: none; border-radius: 8px; padding: 8px 20px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;">
+                    📜 Historial
+                </button>
+                <button id="multiStopBtn" onclick="stopMultiSim()"
+                    style="display: none; background: linear-gradient(135deg, #dc2626, #ef4444); color: #fff; border: none; border-radius: 8px; padding: 8px 20px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;">
+                    🛑 Detener
+                </button>
+            </div>
+        </div>
+
+        <!-- Hour Filter Grid (Colombia time) -->
+        <div style="margin-top: 10px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                <span style="font-size: 11px; color: #f9e2af; font-weight: 600;">⏰ Filtro de Horas (Col)</span>
+                <span style="font-size: 10px; color: #585b70;">Click para activar/bloquear</span>
+                <button onclick="applyOptimalHours()"
+                    style="background: linear-gradient(135deg, #f59e0b, #d97706); color: #000; border: none; border-radius: 6px; padding: 3px 10px; font-size: 10px; font-weight: 700; cursor: pointer; margin-left: auto;">
+                    📊 Horas Óptimas
+                </button>
+                <button onclick="clearAllHours()"
+                    style="background: rgba(255,255,255,0.08); color: #a6adc8; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 3px 10px; font-size: 10px; cursor: pointer;">
+                    🔄 Reset
+                </button>
+            </div>
+            <div id="hourGrid" style="display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px;">
+            </div>
+        </div>
+        <script>
+            // Initialize hour grid — all unblocked by default
+            (function () {
+                const grid = document.getElementById('hourGrid');
+                for (let h = 0; h < 24; h++) {
+                    const btn = document.createElement('button');
+                    btn.id = `hourBtn_${h}`;
+                    btn.dataset.hour = h;
+                    btn.dataset.blocked = '0';
+                    btn.textContent = h.toString().padStart(2, '0');
+                    btn.style.cssText = 'border: none; border-radius: 4px; padding: 4px 0; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.15s;';
+                    updateHourBtn(btn);
+                    btn.onclick = function () {
+                        this.dataset.blocked = this.dataset.blocked === '1' ? '0' : '1';
+                        updateHourBtn(this);
+                    };
+                    grid.appendChild(btn);
+                }
+            })();
+            function updateHourBtn(btn) {
+                if (btn.dataset.blocked === '1') {
+                    btn.style.background = '#45273a';
+                    btn.style.color = '#f38ba8';
+                    btn.style.textDecoration = 'line-through';
+                } else {
+                    btn.style.background = '#1e3a2e';
+                    btn.style.color = '#a6e3a1';
+                    btn.style.textDecoration = 'none';
+                }
+            }
+            function getBlockedHours() {
+                const blocked = [];
+                for (let h = 0; h < 24; h++) {
+                    const btn = document.getElementById(`hourBtn_${h}`);
+                    if (btn && btn.dataset.blocked === '1') blocked.push(h);
+                }
+                return blocked.join(',');
+            }
+
+            // Optimal hours from data analysis:
+            // Only hours 1, 3, 14, 17, 20 have positive P&L
+            // All others should be blocked
+            function applyOptimalHours() {
+                const goodHours = new Set([1, 3, 8, 9, 14, 16]);
+                for (let h = 0; h < 24; h++) {
+                    const btn = document.getElementById(`hourBtn_${h}`);
+                    if (btn) {
+                        btn.dataset.blocked = goodHours.has(h) ? '0' : '1';
+                        updateHourBtn(btn);
+                    }
+                }
+                showToast('📊 Horas óptimas aplicadas: 1, 3, 8, 9, 14, 16h activas', 'success');
+            }
+
+            function clearAllHours() {
+                for (let h = 0; h < 24; h++) {
+                    const btn = document.getElementById(`hourBtn_${h}`);
+                    if (btn) {
+                        btn.dataset.blocked = '0';
+                        updateHourBtn(btn);
+                    }
+                }
+                showToast('🔄 Todas las horas desbloqueadas', 'info');
+            }
+        </script>
+
+        <!-- Progress -->
+        <div id="multiProgress" style="display: none; margin-top: 16px;">
+            <div
+                style="display: flex; justify-content: space-between; font-size: 12px; color: #a6adc8; margin-bottom: 6px;">
+                <span id="multiProgressText">Iniciando...</span>
+                <span id="multiProgressPct">0%</span>
+            </div>
+            <div style="background: #313244; border-radius: 8px; height: 8px; overflow: hidden;">
+                <div id="multiProgressBar"
+                    style="background: linear-gradient(90deg, #6c3bd5, #8b5cf6); height: 100%; width: 0%; transition: width 0.3s; border-radius: 8px;">
+                </div>
+            </div>
+        </div>
+
+        <!-- Results -->
+        <div id="multiResults" style="display: none; margin-top: 16px;">
+            <!-- Summary Cards -->
+            <div id="multiSummary"
+                style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 16px;">
+            </div>
+            <!-- Daily Results Table -->
+            <div style="max-height: 300px; overflow-y: auto; border-radius: 8px;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                    <thead style="position: sticky; top: 0; background: #1e1e2e; z-index: 1;">
+                        <tr style="color: #a6adc8; text-align: left;">
+                            <th style="padding: 8px 6px;">Fecha</th>
+                            <th style="padding: 8px 6px;">Trades</th>
+                            <th style="padding: 8px 6px;">WR</th>
+                            <th style="padding: 8px 6px;">P&L</th>
+                            <th style="padding: 8px 6px;">Balance</th>
+                        </tr>
+                    </thead>
+                    <tbody id="multiDailyBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ENGINE BATTLE Progress + Results -->
+        <div id="engineBattlePanel"
+            style="display: none; margin-top: 16px; background: linear-gradient(135deg, rgba(245, 158, 11, 0.05), rgba(217, 119, 6, 0.02)); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 10px; padding: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h4 style="margin: 0; color: #f59e0b; font-size: 14px;">⚔️ Batalla de Motores — 7 Motores en Paralelo
+                </h4>
+                <button id="btnEngineBattleStop" onclick="stopEngineBattle()"
+                    style="background: #ef4444; color: #fff; border: none; border-radius: 6px; padding: 4px 12px; font-size: 11px; cursor: pointer; display: none;">🛑
+                    Detener</button>
+            </div>
+
+            <!-- Per-engine progress -->
+            <div id="engineProgressBars" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px;">
+            </div>
+
+            <!-- Results table -->
+            <div id="engineBattleResults" style="display: none;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                    <thead style="background: rgba(245, 158, 11, 0.1);">
+                        <tr style="color: #f59e0b; text-align: left;">
+                            <th style="padding: 8px 6px;">🏅</th>
+                            <th style="padding: 8px 6px;">Motor</th>
+                            <th style="padding: 8px 6px; text-align: center;">Trades</th>
+                            <th style="padding: 8px 6px; text-align: center;">W</th>
+                            <th style="padding: 8px 6px; text-align: center;">L</th>
+                            <th style="padding: 8px 6px; text-align: center;">WR%</th>
+                            <th style="padding: 8px 6px; text-align: right;">P&L</th>
+                            <th style="padding: 8px 6px; text-align: right;">Balance</th>
+                            <th style="padding: 8px 6px; text-align: center;">DD%</th>
+                            <th style="padding: 8px 6px; text-align: center;">ROI%</th>
+                        </tr>
+                    </thead>
+                    <tbody id="engineBattleBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- BATTLE HISTORY -->
+        <div id="battleHistoryPanel"
+            style="display: none; margin-top: 16px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.05), rgba(79, 70, 229, 0.02)); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 10px; padding: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h4 style="margin: 0; color: #818cf8; font-size: 14px;">📜 Historial de Batallas</h4>
+                <button onclick="loadBattleHistory()"
+                    style="background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.4); border-radius: 6px; padding: 4px 12px; font-size: 11px; cursor: pointer;">🔄
+                    Refrescar</button>
+            </div>
+            <div id="battleHistoryContent" style="font-size: 12px; color: #a6adc8;">
+                Cargando historial...
+            </div>
+        </div>
+
+        <script>
+            function loadBattleHistory() {
+                const container = document.getElementById('battleHistoryContent');
+                container.innerHTML = '<span style="color:#a6adc8">⏳ Cargando...</span>';
+
+                fetch(`${API_BASE}/simulation/engine-battle-history?limit=10`)
+                    .then(r => r.json())
+                    .then(data => {
+                        if (!data.battles || data.battles.length === 0) {
+                            container.innerHTML = '<span style="color:#585b70">No hay batallas guardadas aún.</span>';
+                            return;
+                        }
+
+                        const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣'];
+                        const engineIcons = {
+                            'original_v1': '🧠', 'university_v2': '🎓',
+                            'bullish_v3': '🐂', 'bullish_v4': '🐂', 'bullish_v5': '🐂',
+                            'reversal_v5': '🎯',
+                            'bearish_v6': '🐻'
+                        };
+
+                        let html = '';
+                        data.battles.forEach((battle, idx) => {
+                            const created = new Date(battle.created_at).toLocaleString('es-CO', { timeZone: 'America/Bogota', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                            const days = battle.total_days || '?';
+                            const startDate = battle.start_date || '?';
+                            const endDate = battle.end_date || '?';
+                            const bid = battle.battle_id;
+
+                            html += `<div style="margin-bottom: 12px; background: rgba(30,30,46,0.6); border: 1px solid rgba(99,102,241,0.15); border-radius: 8px; padding: 10px;">`;
+                            html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">`;
+                            html += `<span style="color:#cdd6f4; font-weight:600;">📅 ${days} días</span>`;
+                            html += `<span style="color:#89b4fa; font-size:11px;">${startDate} → ${endDate}</span>`;
+                            html += `</div>`;
+                            html += `<div style="margin-bottom:8px;"><span style="color:#585b70; font-size:10px;">🕐 Ejecutada: ${created}</span></div>`;
+
+                            html += `<table style="width:100%; border-collapse:collapse; font-size:11px;">`;
+                            html += `<tr style="color:#585b70; border-bottom:1px solid rgba(88,91,112,0.3);">`;
+                            html += `<td style="padding:3px 6px;">Rank</td><td>Motor</td>`;
+                            html += `<td style="text-align:center;">Trades</td>`;
+                            html += `<td style="text-align:center;">WR%</td>`;
+                            html += `<td style="text-align:right;">P&L</td>`;
+                            html += `<td style="text-align:right;">$/día</td></tr>`;
+
+                            (battle.engines || []).forEach((eng, i) => {
+                                const pnl = parseFloat(eng.total_pnl || 0);
+                                const pnlColor = pnl >= 0 ? '#a6e3a1' : '#f38ba8';
+                                const dailyPnl = days > 0 ? (pnl / days).toFixed(0) : '—';
+                                const dailyColor = parseFloat(dailyPnl) >= 0 ? '#a6e3a1' : '#f38ba8';
+                                const icon = engineIcons[eng.engine_name] || '⚙️';
+                                const detailId = `detail_${bid}_${eng.engine_name}`.replace(/[^a-zA-Z0-9_]/g, '_');
+
+                                html += `<tr style="border-bottom:1px solid rgba(88,91,112,0.15); cursor:pointer;" onclick="toggleDailyDetail('${bid}', '${eng.engine_name}', '${detailId}')" title="Click para ver detalle diario">`;
+                                html += `<td style="padding:4px 6px;">${medals[i] || ''}</td>`;
+                                html += `<td style="color:#cdd6f4;">${icon} ${eng.engine_name} <span id="arrow_${detailId}" style="font-size:9px;color:#585b70;">▶</span></td>`;
+                                html += `<td style="text-align:center; color:#a6adc8;">${eng.total_trades}</td>`;
+                                html += `<td style="text-align:center; color:${parseFloat(eng.win_rate) >= 52 ? '#a6e3a1' : parseFloat(eng.win_rate) >= 50 ? '#f9e2af' : '#f38ba8'};">${parseFloat(eng.win_rate).toFixed(1)}%</td>`;
+                                html += `<td style="text-align:right; color:${pnlColor}; font-weight:600;">$${pnl.toFixed(0)}</td>`;
+                                html += `<td style="text-align:right; color:${dailyColor};">$${dailyPnl}</td></tr>`;
+
+                                // Hidden detail row
+                                html += `<tr id="${detailId}" style="display:none;"><td colspan="6" style="padding:0;">`;
+                                html += `<div style="background:rgba(17,17,27,0.7); padding:8px; border-radius:6px; margin:4px 0;">`;
+                                html += `<span style="color:#585b70; font-size:10px;">⏳ Cargando detalle diario...</span>`;
+                                html += `</div></td></tr>`;
+                            });
+
+                            html += `</table></div>`;
+                        });
+
+                        container.innerHTML = html;
+                    })
+                    .catch(err => {
+                        container.innerHTML = `<span style="color:#f38ba8">Error: ${err.message}</span>`;
+                    });
+            }
+
+            function toggleDailyDetail(battleId, engineName, detailId) {
+                const row = document.getElementById(detailId);
+                const arrow = document.getElementById('arrow_' + detailId);
+                if (!row) return;
+
+                if (row.style.display !== 'none') {
+                    row.style.display = 'none';
+                    if (arrow) arrow.textContent = '▶';
+                    return;
+                }
+
+                row.style.display = 'table-row';
+                if (arrow) arrow.textContent = '▼';
+
+                const cell = row.querySelector('div');
+                cell.innerHTML = '<span style="color:#a6adc8; font-size:10px;">⏳ Cargando...</span>';
+
+                fetch(`${API_BASE}/simulation/engine-battle-daily/${battleId}/${engineName}`)
+                    .then(r => r.json())
+                    .then(data => {
+                        if (!data.days || data.days.length === 0) {
+                            cell.innerHTML = '<span style="color:#585b70; font-size:10px;">Sin datos de trades individuales para esta batalla.</span>';
+                            return;
+                        }
+
+                        let t = '<table style="width:100%; border-collapse:collapse; font-size:10px;">';
+                        t += '<tr style="color:#585b70; border-bottom:1px solid rgba(88,91,112,0.3);">';
+                        t += '<td style="padding:2px 4px;">Fecha</td><td style="text-align:center;">Trades</td>';
+                        t += '<td style="text-align:center;">W</td><td style="text-align:center;">L</td>';
+                        t += '<td style="text-align:center;">WR%</td><td style="text-align:right;">PnL</td>';
+                        t += '<td style="text-align:right;">Conf</td></tr>';
+
+                        data.days.forEach(d => {
+                            const pnlColor = d.pnl >= 0 ? '#a6e3a1' : '#f38ba8';
+                            const wrColor = d.win_rate >= 52 ? '#a6e3a1' : d.win_rate >= 50 ? '#f9e2af' : '#f38ba8';
+                            t += `<tr style="border-bottom:1px solid rgba(88,91,112,0.1);">`;
+                            t += `<td style="padding:2px 4px; color:#89b4fa;">${d.date}</td>`;
+                            t += `<td style="text-align:center; color:#a6adc8;">${d.trades}</td>`;
+                            t += `<td style="text-align:center; color:#a6e3a1;">${d.wins}</td>`;
+                            t += `<td style="text-align:center; color:#f38ba8;">${d.losses}</td>`;
+                            t += `<td style="text-align:center; color:${wrColor};">${d.win_rate}%</td>`;
+                            t += `<td style="text-align:right; color:${pnlColor}; font-weight:600;">$${d.pnl.toFixed(0)}</td>`;
+                            t += `<td style="text-align:right; color:#585b70;">${d.avg_confidence.toFixed(2)}</td>`;
+                            t += `</tr>`;
+                        });
+
+                        t += '</table>';
+                        cell.innerHTML = t;
+                    })
+                    .catch(err => {
+                        cell.innerHTML = `<span style="color:#f38ba8; font-size:10px;">Error: ${err.message}</span>`;
+                    });
+            }
+
+            function toggleBattleHistory() {
+                const panel = document.getElementById('battleHistoryPanel');
+                if (panel.style.display === 'none') {
+                    panel.style.display = 'block';
+                    loadBattleHistory();
+                } else {
+                    panel.style.display = 'none';
+                }
+            }
+        </script>
     </div>
 
     <!-- Main Layout -->
@@ -736,6 +1253,38 @@
                     </div>
                 </div>
                 <div id="botTradesList" style="max-height: 200px; overflow-y: auto; font-size: 11px;"></div>
+            </div>
+        </div>
+
+        <!-- AI BATTLE MODE -->
+        <div class="panel"
+            style="margin-top: 12px; border: 1px solid rgba(168, 85, 247, 0.3); background: linear-gradient(180deg, rgba(168, 85, 247, 0.05) 0%, rgba(30, 30, 46, 0.95) 100%);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <div class="panel-title" style="margin: 0;">🏆 Batalla IA — Comparación de Proveedores</div>
+                <button class="btn" id="btnBattle" onclick="startBattle()"
+                    style="background: linear-gradient(135deg, #a855f7, #7c3aed); color: #fff; border: none; font-size: 11px; padding: 6px 16px;">
+                    ⚔️ Iniciar Batalla</button>
+            </div>
+            <div id="battleStatus" style="text-align: center; color: var(--text-muted); padding: 6px; font-size: 11px;">
+                Ejecuta una batalla para comparar L1 Solo vs Groq vs OpenAI vs Claude vs Gemini en los mismos datos
+            </div>
+            <div id="battleResults" style="display: none;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+                    <thead>
+                        <tr style="border-bottom: 2px solid rgba(168, 85, 247, 0.4); color: var(--text-secondary);">
+                            <th style="padding: 6px 4px; text-align: left;">🏅</th>
+                            <th style="padding: 6px 4px; text-align: left;">Estrategia</th>
+                            <th style="padding: 6px 4px; text-align: center;">Trades</th>
+                            <th style="padding: 6px 4px; text-align: center;">W</th>
+                            <th style="padding: 6px 4px; text-align: center;">L</th>
+                            <th style="padding: 6px 4px; text-align: center;">WR%</th>
+                            <th style="padding: 6px 4px; text-align: right;">P&L</th>
+                            <th style="padding: 6px 4px; text-align: right;">Balance</th>
+                            <th style="padding: 6px 4px; text-align: center;">DD%</th>
+                        </tr>
+                    </thead>
+                    <tbody id="battleTableBody"></tbody>
+                </table>
             </div>
         </div>
 
@@ -1040,6 +1589,12 @@
                 select.addEventListener('change', (e) => {
                     if (e.target.value) {
                         loadDay(e.target.value);
+                        // Auto-sync multi-day dates to match the selected date
+                        const d = e.target.value; // format: YYYY-MM-DD
+                        const multiStart = document.getElementById('multiStartDate');
+                        const multiEnd = document.getElementById('multiEndDate');
+                        if (multiStart) multiStart.value = d;
+                        if (multiEnd) multiEnd.value = d;
                     }
                 });
             } catch (e) {
@@ -1176,6 +1731,7 @@
                         showToast('📊 Replay completado', 'info');
                         return;
                     }
+                    if (botAnalyzing) return; // Pause while waiting for Groq
                     stepForward(1);
                 }, playSpeed);
             } else {
@@ -1197,6 +1753,7 @@
                         togglePlay();
                         return;
                     }
+                    if (botAnalyzing) return; // Pause while waiting for Groq
                     stepForward(1);
                 }, playSpeed);
             }
@@ -1382,6 +1939,102 @@
         // ============================================
         // PATTERN POPULATION
         // ============================================
+        // AI BATTLE MODE
+        // ============================================
+
+        async function startBattle() {
+            const btn = document.getElementById('btnBattle');
+            const statusEl = document.getElementById('battleStatus');
+            const resultsEl = document.getElementById('battleResults');
+            const bodyEl = document.getElementById('battleTableBody');
+
+            btn.disabled = true;
+            btn.textContent = '⏳ Procesando...';
+            resultsEl.style.display = 'none';
+            statusEl.style.display = 'block';
+
+            // Live countdown timer
+            let elapsed = 0;
+            const timer = setInterval(() => {
+                elapsed++;
+                statusEl.innerHTML = `<div style="padding: 12px;">⚔️ Batalla en curso... (${elapsed}s)<br><small style="color: #a855f7;">10 señales × 4 IAs en paralelo — estimado ~90 segundos</small></div>`;
+            }, 1000);
+            statusEl.innerHTML = '<div style="padding: 12px;">⚔️ Batalla en curso... (0s)<br><small style="color: #a855f7;">10 señales × 4 IAs en paralelo — estimado ~90 segundos</small></div>';
+
+            // Guard: must have a date selected
+            if (!selectedDate) {
+                clearInterval(timer);
+                statusEl.innerHTML = '<div style="color: var(--red); padding: 8px;">❌ Primero selecciona una fecha</div>';
+                btn.disabled = false;
+                btn.textContent = '⚔️ Iniciar Batalla';
+                return;
+            }
+
+            try {
+                // 180 second timeout via AbortController
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 180000);
+
+                const resp = await fetch(`${API_BASE}/simulation/battle?date=${selectedDate}`, {
+                    method: 'POST',
+                    signal: controller.signal
+                });
+                clearTimeout(timeout);
+                clearInterval(timer);
+
+                const data = await resp.json();
+
+                if (data.error) {
+                    statusEl.innerHTML = `<div style="color: var(--red); padding: 8px;">❌ Error: ${data.error}</div>`;
+                    btn.disabled = false;
+                    btn.textContent = '⚔️ Iniciar Batalla';
+                    return;
+                }
+
+                // Render results table
+                const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
+                bodyEl.innerHTML = '';
+
+                data.results.forEach((r, i) => {
+                    const pnlColor = r.pnl >= 0 ? 'var(--green)' : 'var(--red)';
+                    const wrColor = r.win_rate >= 55 ? 'var(--green)' : r.win_rate >= 45 ? '#f59e0b' : 'var(--red)';
+                    const rowBg = i === 0 ? 'rgba(168, 85, 247, 0.15)' : (i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent');
+
+                    bodyEl.innerHTML += `
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); background: ${rowBg};">
+                            <td style="padding: 6px 4px; font-size: 14px;">${medals[i]}</td>
+                            <td style="padding: 6px 4px; font-weight: bold;">
+                                ${r.icon} ${r.strategy}
+                            </td>
+                            <td style="padding: 6px 4px; text-align: center;">${r.total_trades}</td>
+                            <td style="padding: 6px 4px; text-align: center; color: var(--green);">${r.wins}</td>
+                            <td style="padding: 6px 4px; text-align: center; color: var(--red);">${r.losses}</td>
+                            <td style="padding: 6px 4px; text-align: center; color: ${wrColor}; font-weight: bold;">${r.win_rate}%</td>
+                            <td style="padding: 6px 4px; text-align: right; color: ${pnlColor}; font-weight: bold;">
+                                ${r.pnl >= 0 ? '+' : ''}$${r.pnl.toLocaleString()}
+                            </td>
+                            <td style="padding: 6px 4px; text-align: right;">$${r.final_balance.toLocaleString()}</td>
+                            <td style="padding: 6px 4px; text-align: center; color: ${r.max_drawdown > 5 ? 'var(--red)' : 'var(--text-muted)'};">${r.max_drawdown}%</td>
+                        </tr>`;
+                });
+
+                statusEl.innerHTML = `<div style="padding: 4px; color: var(--text-muted); font-size: 10px;">
+                    📅 ${data.date} | 📊 ${data.total_candles} velas | 🎯 ${data.l1_signals} señales L1 | 🤖 ${data.ai_calls} llamadas IA | ⏱️ ${elapsed}s
+                </div>`;
+                resultsEl.style.display = 'block';
+                showToast(`🏆 Batalla completada en ${elapsed}s — ${data.results[0]?.icon} ${data.results[0]?.strategy} ganó!`, 'success');
+
+            } catch (err) {
+                clearInterval(timer);
+                const msg = err.name === 'AbortError' ? 'Timeout — la batalla tardó más de 3 minutos' : err.message;
+                statusEl.innerHTML = `<div style="color: var(--red); padding: 8px;">❌ Error: ${msg}</div>`;
+            }
+
+            btn.disabled = false;
+            btn.textContent = '⚔️ Iniciar Batalla';
+        }
+
+        // ============================================
 
         async function populatePatterns() {
             const btn = document.getElementById('btnPopulate');
@@ -1460,9 +2113,326 @@
         let botNextAnalysisIndex = 50;
         const BOT_TRADE_DURATION = 5;
         const BOT_COOLDOWN = 3;
+        let botUseGroq = true;
+        let botAiProvider = 'groq';
         let botAnalyzing = false;
+        let botRunId = null;  // DB run ID for persistence
+        let botPrecomputedTrades = [];  // Pre-computed trades from replay_bot
+        let botNextPrecomputedIdx = 0;  // Index into botPrecomputedTrades
 
-        function simulateBot() {
+        // Direction-aware consecutive loss tracking
+        botConsecLossesSameDir = 0;
+        botLastLossDir = null;
+        botDirCooldownUntil = 0;
+
+        // AI provider selector
+        document.addEventListener('DOMContentLoaded', () => {
+            const sel = document.getElementById('aiProviderSelect');
+            if (sel) sel.addEventListener('change', (e) => {
+                botAiProvider = e.target.value;
+                showToast(`🤖 AI Provider: ${botAiProvider === 'openai' ? 'OpenAI GPT-5.2' : 'Groq Llama 70B'}`, 'success');
+            });
+        });
+
+        function toggleGroq() {
+            botUseGroq = !botUseGroq;
+            const btn = document.getElementById('btnGroqToggle');
+            if (botUseGroq) {
+                btn.textContent = '🧠 IA: ON';
+                btn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
+                showToast('🧠 IA Layer 2 activada', 'success');
+            } else {
+                btn.textContent = '📊 IA: OFF';
+                btn.style.background = 'linear-gradient(135deg, #6b7280, #4b5563)';
+                showToast('📊 Solo Layer 1 — sin IA', 'info');
+            }
+        }
+
+
+        // ============================================
+        // MULTI-DAY SIMULATION
+        // ============================================
+        let multiSimPolling = null;
+
+        async function stopMultiSim() {
+            try {
+                await fetch(`${API_BASE}/simulation/simulate-multi-stop`, { method: 'POST' });
+                showToast('🛑 Simulación detenida', 'warning');
+                document.getElementById('multiStopBtn').style.display = 'none';
+                const btn = document.getElementById('btnMultiSim');
+                btn.disabled = false;
+                btn.textContent = '🚀 Simular Rango';
+            } catch (e) {
+                showToast('Error al detener: ' + e.message, 'error');
+            }
+        }
+
+        async function runMultiSim(mode) {
+            const btn = document.getElementById('btnMultiSim');
+            const startDate = mode === 'all' ? '' : document.getElementById('multiStartDate').value;
+            const endDate = mode === 'all' ? '' : document.getElementById('multiEndDate').value;
+            const confidence = document.getElementById('multiConfidence').value;
+            const maxConfidence = document.getElementById('multiMaxConfidence').value;
+            const hurstMin = document.getElementById('hurstMinSelect').value;
+            const hurstMax = document.getElementById('hurstMaxSelect').value;
+            const blockedHrs = getBlockedHours();
+            const engineName = document.getElementById('multiEngineSelect')?.value || document.getElementById('engineSelect').value;
+
+            if (mode !== 'all' && !startDate && !endDate) {
+                showToast('⚠️ Selecciona al menos una fecha o usa "Todos los Datos"', 'error');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = '⏳ Ejecutando...';
+            document.getElementById('multiStopBtn').style.display = 'inline-block';
+
+            document.getElementById('multiProgress').style.display = 'block';
+            document.getElementById('multiResults').style.display = 'none';
+            document.getElementById('multiProgressBar').style.width = '0%';
+            document.getElementById('multiProgressPct').textContent = '0%';
+            document.getElementById('multiProgressText').textContent = 'Iniciando simulación...';
+
+            let url = `${API_BASE}/simulation/simulate-multi?confidence=${confidence}&max_confidence=${maxConfidence}&use_groq=false&hurst_min=${hurstMin}&hurst_max=${hurstMax}&blocked_hours=${blockedHrs}&engine_name=${engineName}`;
+            if (startDate) url += `&start_date=${startDate}`;
+            if (endDate) url += `&end_date=${endDate}`;
+
+            try {
+                const res = await fetch(url, { method: 'POST' });
+                const data = await res.json();
+
+                if (data.status === 'blocked') {
+                    showBlockedModal(data.message, data.data_warnings || []);
+                    btn.disabled = false;
+                    btn.textContent = '🚀 Simular Rango';
+                    // Show progress area with blocked message
+                    const prog = document.getElementById('multiProgress');
+                    prog.style.display = 'block';
+                    const progText = document.getElementById('multiProgressText');
+                    if (progText) progText.textContent = '⛔ Simulación NO ejecutada por falta de indicadores';
+                    const progBar = document.getElementById('multiProgressBar');
+                    if (progBar) { progBar.style.width = '100%'; progBar.style.background = '#ff1744'; }
+                    return;
+                }
+
+                if (data.status === 'error') {
+                    showToast(`❌ ${data.message}`, 'error');
+                    btn.disabled = false;
+                    btn.textContent = '🚀 Simular Rango';
+                    document.getElementById('multiProgress').style.display = 'none';
+                    return;
+                }
+
+                showToast(`🚀 Simulando ${data.total_days} días...`, 'success');
+
+                // Start polling
+                if (multiSimPolling) clearInterval(multiSimPolling);
+                multiSimPolling = setInterval(() => pollMultiStatus(), 2000);
+            } catch (e) {
+                showToast(`❌ Error: ${e.message}`, 'error');
+                btn.disabled = false;
+                btn.textContent = '🚀 Simular Rango';
+            }
+        }
+
+        async function pollMultiStatus() {
+            try {
+                const res = await fetch(`${API_BASE}/simulation/simulate-multi-status`);
+                const data = await res.json();
+
+                const pct = data.total_days > 0 ? Math.round(data.progress / data.total_days * 100) : 0;
+                document.getElementById('multiProgressBar').style.width = pct + '%';
+                document.getElementById('multiProgressPct').textContent = pct + '%';
+
+                if (data.current_date) {
+                    document.getElementById('multiProgressText').textContent =
+                        `📅 Día ${data.progress + 1} de ${data.total_days}: ${data.current_date}`;
+                }
+
+                // Show partial daily results as they come in
+                if (data.daily_results && data.daily_results.length > 0) {
+                    document.getElementById('multiResults').style.display = 'block';
+                    renderMultiDailyTable(data.daily_results);
+                }
+
+                if (!data.running) {
+                    clearInterval(multiSimPolling);
+                    multiSimPolling = null;
+
+                    const btn = document.getElementById('btnMultiSim');
+                    btn.disabled = false;
+                    btn.textContent = '🚀 Simular Rango';
+                    document.getElementById('multiStopBtn').style.display = 'none';
+
+                    document.getElementById('multiProgressBar').style.width = '100%';
+                    document.getElementById('multiProgressPct').textContent = '100%';
+                    document.getElementById('multiProgressText').textContent = '✅ Simulación completada';
+
+                    if (data.error) {
+                        showToast(`❌ Error: ${data.error}`, 'error');
+                        return;
+                    }
+
+                    // Fallback: compute accumulated from daily_results if backend didn't provide it
+                    if (!data.accumulated && data.daily_results && data.daily_results.length > 0) {
+                        const dr = data.daily_results;
+                        const totalTrades = dr.reduce((s, d) => s + (d.trades || 0), 0);
+                        const totalWins = dr.reduce((s, d) => s + (d.wins || 0), 0);
+                        const totalPnl = dr.reduce((s, d) => s + (d.pnl || 0), 0);
+                        const lastBal = dr[dr.length - 1].balance || 10000;
+                        const initBal = 10000;
+                        let peak = initBal, maxDd = 0;
+                        let runBal = initBal;
+                        for (const d of dr) {
+                            runBal += (d.pnl || 0);
+                            if (runBal > peak) peak = runBal;
+                            const dd = (peak - runBal) / peak * 100;
+                            if (dd > maxDd) maxDd = dd;
+                        }
+                        data.accumulated = {
+                            total_days: dr.length,
+                            days_with_trades: dr.filter(d => (d.trades || 0) > 0).length,
+                            total_trades: totalTrades,
+                            total_wins: totalWins,
+                            total_losses: totalTrades - totalWins,
+                            win_rate: totalTrades > 0 ? Math.round(totalWins / totalTrades * 1000) / 10 : 0,
+                            total_pnl: Math.round(totalPnl * 100) / 100,
+                            final_balance: Math.round(lastBal * 100) / 100,
+                            initial_balance: initBal,
+                            peak_balance: Math.round(peak * 100) / 100,
+                            max_drawdown_pct: Math.round(maxDd * 100) / 100,
+                            roi_pct: Math.round(totalPnl / initBal * 10000) / 100,
+                        };
+                    }
+                    renderMultiResults(data);
+                    showToast('✅ Simulación multi-día completada', 'success');
+                }
+            } catch (e) {
+                console.error('Poll error:', e);
+            }
+        }
+
+        let multiDailyData = [];
+
+        function renderMultiDailyTable(dailyResults) {
+            multiDailyData = dailyResults;
+            const tbody = document.getElementById('multiDailyBody');
+            tbody.innerHTML = dailyResults.map((d, idx) => {
+                const pnlColor = (d.pnl || 0) >= 0 ? '#a6e3a1' : '#f38ba8';
+                const wrColor = (d.win_rate || 0) >= 55 ? '#a6e3a1' : (d.win_rate || 0) >= 50 ? '#f9e2af' : '#f38ba8';
+                const hasDetails = d.trade_details && d.trade_details.length > 0;
+                const cursor = hasDetails ? 'cursor: pointer;' : '';
+                return `<tr style="border-bottom: 1px solid #313244; ${cursor}" ${hasDetails ? `onclick="toggleDayTrades(${idx})"` : ''}>
+                    <td style="padding: 6px; color: #cdd6f4;">${hasDetails ? '▶ ' : ''}${d.date}</td>
+                    <td style="padding: 6px; color: #cdd6f4;">${d.trades}${d.error ? ' ⚠️' : ''}</td>
+                    <td style="padding: 6px; color: ${wrColor};">${d.trades > 0 ? d.win_rate + '%' : '-'}</td>
+                    <td style="padding: 6px; color: ${pnlColor}; font-weight: 600;">${d.pnl >= 0 ? '+' : ''}$${d.pnl.toFixed(2)}</td>
+                    <td style="padding: 6px; color: #cdd6f4;">$${d.balance.toLocaleString()}</td>
+                </tr>
+                <tr id="dayTrades_${idx}" style="display: none;">
+                    <td colspan="5" style="padding: 0;"></td>
+                </tr>`;
+            }).join('');
+        }
+
+        function toggleDayTrades(idx) {
+            const detailRow = document.getElementById(`dayTrades_${idx}`);
+            if (!detailRow) return;
+
+            if (detailRow.style.display !== 'none') {
+                detailRow.style.display = 'none';
+                // Reset arrow
+                const parentRow = detailRow.previousElementSibling;
+                if (parentRow) parentRow.querySelector('td').textContent = '▶ ' + multiDailyData[idx].date;
+                return;
+            }
+
+            // Expand
+            detailRow.style.display = '';
+            const parentRow = detailRow.previousElementSibling;
+            if (parentRow) parentRow.querySelector('td').textContent = '▼ ' + multiDailyData[idx].date;
+
+            const trades = multiDailyData[idx].trade_details || [];
+            const td = detailRow.querySelector('td');
+            td.innerHTML = `
+                <div style="background: #181825; padding: 8px 12px; max-height: 200px; overflow-y: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+                        <thead>
+                            <tr style="color: #585b70;">
+                                <th style="padding: 4px 6px; text-align: left;">Hora</th>
+                                <th style="padding: 4px 6px; text-align: left;">Dir</th>
+                                <th style="padding: 4px 6px; text-align: right;">Stake</th>
+                                <th style="padding: 4px 6px; text-align: right;">Conf</th>
+                                <th style="padding: 4px 6px; text-align: left;">Result</th>
+                                <th style="padding: 4px 6px; text-align: right;">P&L</th>
+                                <th style="padding: 4px 6px; text-align: right;">Entry</th>
+                                <th style="padding: 4px 6px; text-align: right;">Exit</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${trades.map(t => {
+                const tPnlColor = t.pnl >= 0 ? '#a6e3a1' : '#f38ba8';
+                const dirColor = t.direction === 'CALL' ? '#a6e3a1' : '#f38ba8';
+                const resultIcon = t.result === 'WIN' ? '✅' : '❌';
+                const time = t.time ? t.time.split(' ').pop()?.substring(0, 5) || t.time : '-';
+                return `<tr style="border-bottom: 1px solid #1e1e2e;">
+                                    <td style="padding: 3px 6px; color: #a6adc8;">${time}</td>
+                                    <td style="padding: 3px 6px; color: ${dirColor}; font-weight: 600;">${t.direction}</td>
+                                    <td style="padding: 3px 6px; color: #cdd6f4; text-align: right;">$${(t.stake || 0).toFixed(0)}</td>
+                                    <td style="padding: 3px 6px; color: #cdd6f4; text-align: right;">${((t.confidence || 0) * 100).toFixed(0)}%</td>
+                                    <td style="padding: 3px 6px;">${resultIcon}</td>
+                                    <td style="padding: 3px 6px; color: ${tPnlColor}; text-align: right; font-weight: 600;">${t.pnl >= 0 ? '+' : ''}$${t.pnl.toFixed(2)}</td>
+                                    <td style="padding: 3px 6px; color: #a6adc8; text-align: right;">${t.entry_price}</td>
+                                    <td style="padding: 3px 6px; color: #a6adc8; text-align: right;">${t.exit_price}</td>
+                                </tr>`;
+            }).join('')}
+                        </tbody>
+                    </table>
+                </div>`;
+        }
+
+        function renderMultiResults(data) {
+            const acc = data.accumulated;
+            if (!acc) return;
+
+            const pnlColor = acc.total_pnl >= 0 ? '#a6e3a1' : '#f38ba8';
+            const roiColor = acc.roi_pct >= 0 ? '#a6e3a1' : '#f38ba8';
+
+            document.getElementById('multiSummary').innerHTML = `
+                <div style="background: #313244; border-radius: 8px; padding: 10px 12px; text-align: center;">
+                    <div style="font-size: 11px; color: #a6adc8;">Días</div>
+                    <div style="font-size: 18px; font-weight: 700; color: #cdd6f4;">${acc.days_with_trades}/${acc.total_days}</div>
+                </div>
+                <div style="background: #313244; border-radius: 8px; padding: 10px 12px; text-align: center;">
+                    <div style="font-size: 11px; color: #a6adc8;">Trades</div>
+                    <div style="font-size: 18px; font-weight: 700; color: #cdd6f4;">${acc.total_trades}</div>
+                </div>
+                <div style="background: #313244; border-radius: 8px; padding: 10px 12px; text-align: center;">
+                    <div style="font-size: 11px; color: #a6adc8;">Win Rate</div>
+                    <div style="font-size: 18px; font-weight: 700; color: ${acc.win_rate >= 55 ? '#a6e3a1' : acc.win_rate >= 50 ? '#f9e2af' : '#f38ba8'};">${acc.win_rate}%</div>
+                </div>
+                <div style="background: #313244; border-radius: 8px; padding: 10px 12px; text-align: center;">
+                    <div style="font-size: 11px; color: #a6adc8;">P&L Total</div>
+                    <div style="font-size: 18px; font-weight: 700; color: ${pnlColor};">${acc.total_pnl >= 0 ? '+' : ''}$${acc.total_pnl.toFixed(2)}</div>
+                </div>
+                <div style="background: #313244; border-radius: 8px; padding: 10px 12px; text-align: center;">
+                    <div style="font-size: 11px; color: #a6adc8;">ROI</div>
+                    <div style="font-size: 18px; font-weight: 700; color: ${roiColor};">${acc.roi_pct >= 0 ? '+' : ''}${acc.roi_pct}%</div>
+                </div>
+                <div style="background: #313244; border-radius: 8px; padding: 10px 12px; text-align: center;">
+                    <div style="font-size: 11px; color: #a6adc8;">Max Drawdown</div>
+                    <div style="font-size: 18px; font-weight: 700; color: #f38ba8;">${acc.max_drawdown_pct}%</div>
+                </div>
+                <div style="background: #313244; border-radius: 8px; padding: 10px 12px; text-align: center;">
+                    <div style="font-size: 11px; color: #a6adc8;">Balance Final</div>
+                    <div style="font-size: 18px; font-weight: 700; color: ${pnlColor};">$${acc.final_balance.toLocaleString()}</div>
+                </div>
+            `;
+
+            renderMultiDailyTable(data.daily_results);
+        }
+
+        async function simulateBot() {
             if (!selectedDate) {
                 showToast('⚠️ Selecciona una fecha primero', 'error');
                 return;
@@ -1474,7 +2444,15 @@
                 botEnabled = false;
                 btn.textContent = '🤖 Simular Bot';
                 btn.style.background = '';
-                showToast('🤖 Bot desactivado', 'info');
+                // Finalize run in DB
+                if (botRunId) {
+                    const wins = botRevealedTrades.filter(t => t.outcome === 'WIN').length;
+                    const losses = botRevealedTrades.filter(t => t.outcome === 'LOSS').length;
+                    const wr = botRevealedTrades.length > 0 ? (wins / botRevealedTrades.length * 100) : 0;
+                    const pnl = botRevealedTrades.reduce((s, t) => s + t.pnl, 0);
+                    fetch(`${API_BASE}/simulation/finish-run?run_id=${botRunId}&total_trades=${botRevealedTrades.length}&winning_trades=${wins}&losing_trades=${losses}&win_rate=${wr.toFixed(1)}&total_pnl=${pnl.toFixed(2)}&max_drawdown_pct=0&final_balance=${botBalance.toFixed(2)}`, { method: 'POST' });
+                }
+                showToast('🤖 Bot desactivado — resultados guardados', 'info');
                 return;
             }
 
@@ -1486,30 +2464,89 @@
             botPendingEntry = null;
             botBalance = 10000;
             botInitialBalance = 10000;
-            botNextAnalysisIndex = Math.max(50, currentIndex);
+            botNextAnalysisIndex = 0;
             botAnalyzing = false;
+            botPrecomputedTrades = [];
+            botNextPrecomputedIdx = 0;
 
             btn.textContent = '⏹ Detener Bot';
             btn.style.background = 'linear-gradient(135deg, #ef4444, #dc2626)';
 
             const panel = document.getElementById('botResultsPanel');
             panel.style.display = 'block';
-            document.getElementById('botTrades').textContent = '0';
+            document.getElementById('botTrades').textContent = '...';
             document.getElementById('botWinRate').textContent = '--%';
             document.getElementById('botWinRate').className = 'indicator-value neutral';
-            document.getElementById('botPnL').textContent = '$0.00';
+            document.getElementById('botPnL').textContent = 'Calculando...';
             document.getElementById('botPnL').className = 'indicator-value neutral';
             document.getElementById('botDrawdown').textContent = '0%';
             document.getElementById('botDrawdown').className = 'indicator-value neutral';
-            document.getElementById('botFinalBalance').textContent = '$' + botBalance.toLocaleString();
+            document.getElementById('botFinalBalance').textContent = '...';
             document.getElementById('botFinalBalance').style.color = 'var(--text-primary)';
-            document.getElementById('botTradesList').innerHTML = '<div style="text-align:center; color: var(--text-muted); padding: 12px;">🤖 Bot activo — analizando cada vela en vivo (L1 + 🧠 Groq)</div>';
+            let statusLabel;
+            if (!botUseGroq) {
+                statusLabel = '📊 Solo Layer 1 — sin IA';
+            } else if (botAiProvider === 'openai') {
+                statusLabel = '🔵 L1 + OpenAI GPT-5.2';
+            } else if (botAiProvider === 'claude') {
+                statusLabel = '🟣 L1 + Claude Opus 4';
+            } else if (botAiProvider === 'gemini') {
+                statusLabel = '🟠 L1 + Gemini 2.5 Flash';
+            } else {
+                statusLabel = '🟢 L1 + Groq (Llama 70B)';
+            }
+            document.getElementById('botTradesList').innerHTML = `<div style="text-align:center; color: var(--text-muted); padding: 12px;">🤖 Pre-calculando L1... (${statusLabel})</div>`;
 
-            showToast('🤖 Bot activado — analiza en vivo como el bot real', 'success');
+            showToast('🤖 Pre-calculando Layer 1 (rápido)...', 'info');
+
+            // ===== PRE-COMPUTE L1 ONLY (never Groq here — Groq runs live on chart) =====
+            try {
+                const conf = document.getElementById('confidenceSelect')?.value || '0.60';
+                const maxConf = document.getElementById('multiMaxConfidence')?.value || '1.0';
+                const hurstMin = document.getElementById('hurstMinSelect')?.value || '0.6';
+                const hurstMax = document.getElementById('hurstMaxSelect')?.value || '0.7';
+                const blockedHrs = getBlockedHours();
+                const engineName = document.getElementById('engineSelect')?.value || 'original_v1';
+                const res = await fetch(
+                    `${API_BASE}/simulation/bot-precompute?date=${selectedDate}&confidence=${conf}&max_confidence=${maxConf}&use_groq=false&ai_provider=${botAiProvider}&hurst_min=${hurstMin}&hurst_max=${hurstMax}&blocked_hours=${blockedHrs}&engine_name=${engineName}`,
+                    { method: 'POST' }
+                );
+                const data = await res.json();
+                botPrecomputedTrades = data.trades || [];
+                botNextPrecomputedIdx = 0;
+
+                // Create DB run and save all trades
+                try {
+                    const strategy = botUseGroq ? (botAiProvider === 'openai' ? 'L1_OpenAI' : 'L1_Groq') : 'L1_Only';
+                    const runRes = await fetch(`${API_BASE}/simulation/start-run?date=${selectedDate}&strategy=${strategy}`, { method: 'POST' });
+                    const runData = await runRes.json();
+                    botRunId = runData.run_id;
+                } catch (e) {
+                    console.error('Failed to create sim run:', e);
+                    botRunId = null;
+                }
+
+                const groqNote = botUseGroq ? ' — Groq se activará EN VIVO cuando L1 señale' : '';
+                showToast(`🤖 ${botPrecomputedTrades.length} trades L1 detectados${groqNote}`, 'success');
+                document.getElementById('botTradesList').innerHTML = `<div style="text-align:center; color: var(--text-muted); padding: 12px;">🤖 ${botPrecomputedTrades.length} señales L1${botUseGroq ? ' — 🧠 Groq evaluará en vivo' : ''}</div>`;
+
+                // If chart already has candles revealed, catch up instantly
+                if (currentIndex > 0) {
+                    for (let ci = 0; ci < currentIndex; ci++) {
+                        checkBotTrade(ci);
+                    }
+                }
+            } catch (e) {
+                console.error('Bot precompute error:', e);
+                showToast('❌ Error pre-calculando trades', 'error');
+                botEnabled = false;
+                btn.textContent = '🤖 Activar Bot';
+                btn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
+            }
         }
 
         function checkBotTrade(candleIndex) {
-            if (!botEnabled) return;
+            if (!botEnabled || botPrecomputedTrades.length === 0) return;
 
             // IN_TRADE: check exit
             if (botState === 'IN_TRADE' && botPendingEntry) {
@@ -1519,125 +2556,208 @@
                 return;
             }
 
-            // COOLDOWN: wait
-            if (botState === 'COOLDOWN') {
-                if (candleIndex >= botNextAnalysisIndex) {
-                    botState = 'IDLE';
-                } else {
-                    return;
-                }
-            }
+            // Skip if waiting for Groq response
+            if (botState === 'WAITING_GROQ') return;
 
-            // IDLE: analyze
-            if (botState === 'IDLE' && candleIndex >= botNextAnalysisIndex && !botAnalyzing) {
-                analyzeCandleLive(candleIndex);
-            }
-        }
-
-        async function analyzeCandleLive(candleIndex) {
-            if (botAnalyzing) return;
-            botAnalyzing = true;
-            botState = 'ANALYZING';
+            // Check if next pre-computed trade starts at this candle
+            if (botNextPrecomputedIdx >= botPrecomputedTrades.length) return;
+            const nextTrade = botPrecomputedTrades[botNextPrecomputedIdx];
+            if (candleIndex < nextTrade.candle_index) return;
 
             const candle = allCandles[candleIndex];
-            const thinkingMarker = {
-                time: candle.timestamp,
-                position: 'aboveBar',
-                color: '#8b5cf6',
-                shape: 'circle',
-                text: '🔍'
-            };
-            botActiveMarkers.push(thinkingMarker);
-            candleSeries.setMarkers([...botActiveMarkers].sort((a, b) => a.time - b.time));
+            if (!candle) return;
 
-            try {
-                const res = await fetch(
-                    `${API_BASE}/simulation/bot-step?date=${selectedDate}&candle_index=${candleIndex}&use_groq=true`,
-                    { method: 'POST' }
-                );
-                const result = await res.json();
+            // ===== GROQ LIVE: If Groq is ON, call it NOW when L1 triggers =====
+            if (botUseGroq && !nextTrade._groq_evaluated) {
+                botState = 'WAITING_GROQ';
+                const wasPlaying = isPlaying;
+                if (isPlaying) togglePlay(); // Pause chart while Groq thinks
 
-                botActiveMarkers = botActiveMarkers.filter(m => m !== thinkingMarker);
+                // Show live Groq indicator
+                const groqIndicator = document.getElementById('botTradesList');
+                const prevContent = groqIndicator.innerHTML;
+                groqIndicator.innerHTML = `<div style="text-align:center; padding: 12px;"><span style="color: #10b981; font-size: 1.2em;">🧠 Consultando Groq...</span><br><small style="color: var(--text-muted);">L1 señala ${nextTrade.direction} (${(nextTrade.confidence * 100).toFixed(0)}%) — esperando Layer 2...</small></div>`;
 
-                if ((result.action === 'CALL' || result.action === 'PUT') && result.confidence >= 0.60) {
-                    botPendingEntry = {
-                        action: result.action,
-                        confidence: result.confidence,
-                        entry_price: result.entry_price,
-                        entry_index: candleIndex,
-                        exit_index: candleIndex + BOT_TRADE_DURATION,
-                        timestamp: candle.timestamp,
-                        time: new Date(candle.timestamp * 1000).toISOString(),
-                        groq_used: result.groq_used,
-                        l1_signal: result.l1_signal,
-                        l1_confidence: result.l1_confidence,
-                        reasoning: result.reasoning || '',
-                        groq_reasoning: result.groq_reasoning || '',
-                        hurst: result.hurst
-                    };
-
-                    botState = 'IN_TRADE';
-
-                    const isCall = result.action === 'CALL';
-                    const groqBadge = result.groq_used ? '🧠' : '📊';
-                    botActiveMarkers.push({
-                        time: candle.timestamp,
-                        position: isCall ? 'belowBar' : 'aboveBar',
-                        color: '#f59e0b',
-                        shape: isCall ? 'arrowUp' : 'arrowDown',
-                        text: `${groqBadge} ${result.action} (${(result.confidence * 100).toFixed(0)}%) ⏳`
-                    });
-
-                    showToast(`${groqBadge} ${result.action} @ ${result.entry_price} (conf: ${(result.confidence * 100).toFixed(0)}%)`, 'info');
-                } else {
-                    botState = 'IDLE';
-                    botNextAnalysisIndex = candleIndex + 1;
-                }
-            } catch (e) {
-                console.error('Bot step error:', e);
-                botActiveMarkers = botActiveMarkers.filter(m => m !== thinkingMarker);
-                botState = 'IDLE';
-                botNextAnalysisIndex = candleIndex + 2;
-            } finally {
-                botAnalyzing = false;
+                // Show pending marker on chart
+                botActiveMarkers.push({
+                    time: candle.timestamp,
+                    position: nextTrade.direction === 'CALL' ? 'belowBar' : 'aboveBar',
+                    color: '#f59e0b',
+                    shape: nextTrade.direction === 'CALL' ? 'arrowUp' : 'arrowDown',
+                    text: `🧠 L1: ${nextTrade.direction} → Groq...`
+                });
                 candleSeries.setMarkers([...botActiveMarkers].sort((a, b) => a.time - b.time));
+
+                const hurstMin = document.getElementById('hurstMinSelect')?.value || '0.6';
+                const hurstMax = document.getElementById('hurstMaxSelect')?.value || '0.7';
+                const engineName = document.getElementById('engineSelect')?.value || 'original_v1';
+
+                fetch(`${API_BASE}/simulation/live-step?date=${selectedDate}&candle_index=${candleIndex}&use_groq=true&ai_provider=${botAiProvider}&hurst_min=${hurstMin}&hurst_max=${hurstMax}&engine_name=${engineName}`, { method: 'POST' })
+                    .then(r => r.json())
+                    .then(groqResult => {
+                        // Remove pending marker
+                        botActiveMarkers.pop();
+
+                        const groqAction = groqResult.action || 'HOLD';
+                        const groqConf = groqResult.confidence || 0;
+                        const groqUsed = groqResult.groq_used || false;
+                        const groqReasoning = groqResult.groq_reasoning || '';
+                        const l1Signal = groqResult.l1_signal || nextTrade.direction;
+
+                        if (groqAction === 'HOLD' || groqAction === 'SKIP') {
+                            // Groq overrode L1 — show it and skip trade
+                            showToast(`🧠 Groq CANCELÓ: L1=${l1Signal} → Groq=HOLD`, 'warning');
+                            botActiveMarkers.push({
+                                time: candle.timestamp,
+                                position: nextTrade.direction === 'CALL' ? 'belowBar' : 'aboveBar',
+                                color: '#6b7280',
+                                shape: 'circle',
+                                text: `🧠❌ L1:${l1Signal} → Groq:HOLD`
+                            });
+                            candleSeries.setMarkers([...botActiveMarkers].sort((a, b) => a.time - b.time));
+                            botNextPrecomputedIdx++;
+                            botState = 'IDLE';
+                            groqIndicator.innerHTML = prevContent;
+                        } else {
+                            // Groq confirmed — execute trade with Groq's confidence
+                            const finalDir = groqAction;
+                            const finalConf = groqConf;
+                            showToast(`🧠✅ Groq CONFIRMA: ${finalDir} (${(finalConf * 100).toFixed(0)}%)`, 'success');
+
+                            botPendingEntry = {
+                                action: finalDir,
+                                confidence: finalConf,
+                                entry_price: nextTrade.entry_price,
+                                exit_price: nextTrade.exit_price,
+                                entry_index: candleIndex,
+                                exit_index: nextTrade.exit_candle_index,
+                                timestamp: candle.timestamp,
+                                time: nextTrade.time,
+                                groq_used: groqUsed,
+                                ai_provider: botAiProvider,
+                                l1_signal: l1Signal,
+                                l1_confidence: nextTrade.confidence,
+                                reasoning: groqResult.reasoning || '',
+                                groq_reasoning: groqReasoning,
+                                hurst: groqResult.hurst || 0,
+                                precomputed_result: nextTrade.result,
+                                precomputed_pnl: nextTrade.pnl,
+                                precomputed_stake: nextTrade.stake,
+                                precomputed_balance: nextTrade.balance_after
+                            };
+                            botState = 'IN_TRADE';
+                            botNextPrecomputedIdx++;
+
+                            const isCall = finalDir === 'CALL';
+                            botActiveMarkers.push({
+                                time: candle.timestamp,
+                                position: isCall ? 'belowBar' : 'aboveBar',
+                                color: '#f59e0b',
+                                shape: isCall ? 'arrowUp' : 'arrowDown',
+                                text: `🧠✅ ${finalDir} (${(finalConf * 100).toFixed(0)}%) ⏳`
+                            });
+                            candleSeries.setMarkers([...botActiveMarkers].sort((a, b) => a.time - b.time));
+                            groqIndicator.innerHTML = prevContent;
+                        }
+
+                        // Resume chart if it was playing
+                        if (wasPlaying && !isPlaying) togglePlay();
+                    })
+                    .catch(err => {
+                        console.error('Live Groq error:', err);
+                        showToast('❌ Error consultando Groq — usando L1', 'error');
+                        botActiveMarkers.pop();
+                        // Fallback to L1 decision
+                        nextTrade._groq_evaluated = true;
+                        botState = 'IDLE';
+                        groqIndicator.innerHTML = prevContent;
+                        if (wasPlaying && !isPlaying) togglePlay();
+                        checkBotTrade(candleIndex); // Retry with L1 only
+                    });
+                return;
             }
+
+            // ===== NO GROQ or already evaluated — use pre-computed L1 result =====
+            botPendingEntry = {
+                action: nextTrade.direction,
+                confidence: nextTrade.confidence,
+                entry_price: nextTrade.entry_price,
+                exit_price: nextTrade.exit_price,
+                entry_index: candleIndex,
+                exit_index: nextTrade.exit_candle_index,
+                timestamp: candle.timestamp,
+                time: nextTrade.time,
+                groq_used: nextTrade.groq_used || false,
+                ai_provider: 'precomputed',
+                l1_signal: nextTrade.l1_signal || nextTrade.direction,
+                l1_confidence: nextTrade.l1_confidence || nextTrade.confidence,
+                reasoning: nextTrade.reasoning || '',
+                groq_reasoning: nextTrade.groq_reasoning || '',
+                hurst: 0,
+                precomputed_result: nextTrade.result,
+                precomputed_pnl: nextTrade.pnl,
+                precomputed_stake: nextTrade.stake,
+                precomputed_balance: nextTrade.balance_after
+            };
+
+            botState = 'IN_TRADE';
+            botNextPrecomputedIdx++;
+
+            const isCall = nextTrade.direction === 'CALL';
+            const groqBadge = '📊';
+            botActiveMarkers.push({
+                time: candle.timestamp,
+                position: isCall ? 'belowBar' : 'aboveBar',
+                color: '#f59e0b',
+                shape: isCall ? 'arrowUp' : 'arrowDown',
+                text: `${groqBadge} ${nextTrade.direction} (${(nextTrade.confidence * 100).toFixed(0)}%) ⏳`
+            });
+            candleSeries.setMarkers([...botActiveMarkers].sort((a, b) => a.time - b.time));
         }
 
         function resolveBotTrade(candleIndex) {
             if (!botPendingEntry) return;
             const entry = botPendingEntry;
-            const exitCandle = allCandles[Math.min(entry.exit_index, allCandles.length - 1)];
-            const exitPrice = exitCandle.close;
 
-            let won = entry.action === 'CALL' ? exitPrice > entry.entry_price : exitPrice < entry.entry_price;
-            // Kelly dinámico: 1.3% base → hasta 1.5% con alta confianza
-            const conf = entry.confidence || 0.6;
-            const stakePercent = 0.013 + (Math.min(conf, 0.95) - 0.60) * ((0.015 - 0.013) / (0.95 - 0.60));
-            const stake = Math.max(0.35, botBalance * Math.max(0.013, Math.min(0.015, stakePercent)));
-            const pnl = won ? stake * 0.84 : -stake;
+            // Use pre-computed results from replay_bot — GUARANTEED match with multi-day
+            const won = entry.precomputed_result === 'WIN';
+            const pnl = entry.precomputed_pnl;
+            const stake = entry.precomputed_stake;
+            const exitPrice = entry.exit_price;
 
             const trade = {
                 ...entry,
                 direction: entry.action,
                 exit_price: exitPrice,
-                result: won ? 'WIN' : 'LOSS',
+                result: entry.precomputed_result,
+                outcome: entry.precomputed_result,
                 pnl: pnl,
             };
             botRevealedTrades.push(trade);
 
-            botBalance = botInitialBalance;
+            // Save to DB
+            if (botRunId) {
+                const entryTime = entry.time;
+                const exitCandle = allCandles[Math.min(entry.exit_index, allCandles.length - 1)];
+                const exitTime = exitCandle ? new Date(exitCandle.timestamp * 1000).toISOString() : entryTime;
+                fetch(`${API_BASE}/simulation/save-trade?run_id=${botRunId}&entry_time=${entryTime}&exit_time=${exitTime}&direction=${entry.action}&entry_price=${entry.entry_price}&exit_price=${exitPrice}&stake=${stake.toFixed(2)}&outcome=${trade.outcome}&profit_loss=${pnl.toFixed(2)}&balance_after=${entry.precomputed_balance.toFixed(2)}&confidence=${entry.confidence}&hurst=${entry.hurst || 0}&groq_used=${entry.groq_used || false}`, { method: 'POST' }).catch(e => console.error('Save trade error:', e));
+            }
+
+            // Use pre-computed balance for display
+            botBalance = entry.precomputed_balance;
+
             let wins = 0, maxBal = botInitialBalance, maxDD = 0;
+            let runBalance = botInitialBalance;
             botRevealedTrades.forEach(t => {
-                botBalance += t.pnl;
+                runBalance += t.pnl;
                 if (t.result === 'WIN') wins++;
-                if (botBalance > maxBal) maxBal = botBalance;
-                const dd = ((maxBal - botBalance) / maxBal) * 100;
+                if (runBalance > maxBal) maxBal = runBalance;
+                const dd = ((maxBal - runBalance) / maxBal) * 100;
                 if (dd > maxDD) maxDD = dd;
             });
 
             const isCall = entry.action === 'CALL';
-            const groqBadge = entry.groq_used ? '🧠' : '';
+            const groqBadge = entry.groq_used ? '🟢🧠' : '';
             botActiveMarkers = botActiveMarkers.filter(m => m.time !== entry.timestamp);
             botActiveMarkers.push({
                 time: entry.timestamp,
@@ -1671,8 +2791,7 @@
             showToast(`${won ? '✅' : '❌'} ${entry.action} ${won ? 'WIN' : 'LOSS'}: $${pnl > 0 ? '+' : ''}${pnl.toFixed(0)}`, won ? 'success' : 'error');
 
             botPendingEntry = null;
-            botState = 'COOLDOWN';
-            botNextAnalysisIndex = entry.exit_index + BOT_COOLDOWN;
+            botState = 'IDLE';
         }
 
         function updateBotTradesList() {
@@ -1691,14 +2810,15 @@
                 const time = t.time.includes('T') ? t.time.split('T')[1].substring(0, 5) : t.time.substring(11, 16);
                 const isWin = t.result === 'WIN';
                 const dirColor = t.direction === 'CALL' ? 'var(--green)' : 'var(--red)';
-                const srcIcon = t.groq_used ? '🧠' : '📊';
+                const srcIcon = t.ai_provider === 'openai' ? '🔵🤖' : t.ai_provider === 'claude' ? '🟣🧠' : t.ai_provider === 'gemini' ? '🟠✨' : t.groq_used ? '🟢🧠' : '📊';
+                const providerName = t.ai_provider === 'openai' ? 'OpenAI GPT-5.2' : t.ai_provider === 'claude' ? 'Claude Opus 4' : t.ai_provider === 'gemini' ? 'Gemini 2.5 Flash' : t.groq_used ? 'Groq Llama 70B' : 'Layer 1 only';
                 const tip = t.groq_reasoning || t.reasoning || '';
 
                 html += `<tr style="border-bottom: 1px solid rgba(255,255,255,0.05);" title="${tip.replace(/"/g, '&quot;')}">`;
                 html += `<td style="padding:3px 4px; color: var(--text-secondary);">${time}</td>`;
                 html += `<td style="padding:3px 4px; color: ${dirColor}; text-align:center; font-weight:bold;">${t.direction}</td>`;
                 html += `<td style="padding:3px 4px; text-align:center;">${(t.confidence * 100).toFixed(0)}%</td>`;
-                html += `<td style="padding:3px 4px; text-align:center;" title="${t.groq_used ? 'Groq Layer 2' : 'Layer 1 only'}">${srcIcon}</td>`;
+                html += `<td style="padding:3px 4px; text-align:center;" title="${providerName}">${srcIcon}</td>`;
                 html += `<td style="padding:3px 4px; text-align:center;">${isWin ? '✅' : '❌'}</td>`;
                 html += `<td style="padding:3px 4px; text-align:right; color: ${isWin ? 'var(--green)' : 'var(--red)'}; font-weight:bold;">${isWin ? '+' : ''}${t.pnl.toFixed(0)}</td>`;
                 html += `</tr>`;
@@ -1711,15 +2831,217 @@
 
 
         // ============================================
+        // ENGINE BATTLE — 4 engines in parallel
+        // ============================================
+
+        let engineBattlePolling = null;
+
+        async function startEngineBattle() {
+            const btn = document.getElementById('btnEngineBattle');
+            const panel = document.getElementById('engineBattlePanel');
+            const resultsDiv = document.getElementById('engineBattleResults');
+            const progressDiv = document.getElementById('engineProgressBars');
+            const stopBtn = document.getElementById('btnEngineBattleStop');
+
+            btn.disabled = true;
+            btn.textContent = '⏳ Lanzando...';
+            panel.style.display = 'block';
+            resultsDiv.style.display = 'none';
+            stopBtn.style.display = 'inline-block';
+            progressDiv.innerHTML = '';
+
+            // Read filter values from the existing multi-sim controls
+            const startDate = document.getElementById('multiStartDate').value;
+            const endDate = document.getElementById('multiEndDate').value;
+            const confidence = document.getElementById('multiConfidence').value || '0.60';
+            const maxConfidence = document.getElementById('multiMaxConfidence').value || '1.0';
+            const hurstMin = document.getElementById('hurstMinSelect').value || '0.0';
+            const hurstMax = document.getElementById('hurstMaxSelect').value || '1.0';
+            const blockedHrs = getBlockedHours();
+
+            let url = `${API_BASE}/simulation/engine-battle?confidence=${confidence}&max_confidence=${maxConfidence}&hurst_min=${hurstMin}&hurst_max=${hurstMax}&blocked_hours=${blockedHrs}`;
+            if (startDate) url += `&start_date=${startDate}`;
+            if (endDate) url += `&end_date=${endDate}`;
+
+            try {
+                const res = await fetch(url, { method: 'POST' });
+                const data = await res.json();
+
+                if (data.status === 'error') {
+                    showToast(`❌ ${data.message}`, 'error');
+                    btn.disabled = false;
+                    btn.textContent = '⚔️ Batalla de Motores';
+                    return;
+                }
+                if (data.status === 'already_running') {
+                    showToast('⚠️ Ya hay una batalla en curso', 'error');
+                    btn.disabled = false;
+                    btn.textContent = '⚔️ Batalla de Motores';
+                    return;
+                }
+
+                showToast(`⚔️ Batalla iniciada: ${data.total_days} días × 7 motores`, 'success');
+
+                // Start polling
+                if (engineBattlePolling) clearInterval(engineBattlePolling);
+                engineBattlePolling = setInterval(pollEngineBattle, 2000);
+            } catch (e) {
+                showToast(`❌ Error: ${e.message}`, 'error');
+                btn.disabled = false;
+                btn.textContent = '⚔️ Batalla de Motores';
+            }
+        }
+
+        async function pollEngineBattle() {
+            try {
+                const res = await fetch(`${API_BASE}/simulation/engine-battle-status`);
+                const data = await res.json();
+
+                const progressDiv = document.getElementById('engineProgressBars');
+                const engines = data.engines || {};
+                const totalDays = data.total_days || 1;
+
+                // Render per-engine progress bars
+                const engineColors = {
+                    'original_v1': '#6366f1',
+                    'university_v2': '#10b981',
+                    'bullish_v3': '#60a5fa',
+                    'bullish_v4': '#3b82f6',
+                    'bullish_v5': '#2563eb',
+                    'reversal_v5': '#a855f7',
+                    'bearish_v6': '#a855f7',
+                };
+
+                let html = '';
+                for (const [name, eng] of Object.entries(engines)) {
+                    const pct = Math.round((eng.progress || 0) / totalDays * 100);
+                    const color = engineColors[name] || '#888';
+                    const statusText = eng.status === 'completed' ? '✅' :
+                        eng.status === 'running' ? `📅 ${eng.current_date || '...'}` :
+                            eng.status === 'error' ? '❌' : '⏳';
+
+                    html += `
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 11px; color: #cdd6f4; min-width: 110px; white-space: nowrap;">${eng.icon || ''} ${eng.label || name}</span>
+                            <div style="flex: 1; background: #313244; border-radius: 6px; height: 6px; overflow: hidden;">
+                                <div style="background: ${color}; width: ${pct}%; height: 100%; transition: width 0.3s; border-radius: 6px;"></div>
+                            </div>
+                            <span style="font-size: 10px; color: #a6adc8; min-width: 40px; text-align: right;">${pct}%</span>
+                            <span style="font-size: 10px; min-width: 100px;">${statusText}</span>
+                        </div>
+                    `;
+                }
+                progressDiv.innerHTML = html;
+
+                // Check if done
+                if (!data.running) {
+                    clearInterval(engineBattlePolling);
+                    engineBattlePolling = null;
+
+                    const btn = document.getElementById('btnEngineBattle');
+                    btn.disabled = false;
+                    btn.textContent = '⚔️ Batalla de Motores';
+                    document.getElementById('btnEngineBattleStop').style.display = 'none';
+
+                    if (data.results && data.results.length > 0) {
+                        renderEngineBattleResults(data.results, data.winner);
+                        showToast(`🏆 Batalla terminada! Ganador: ${data.winner}`, 'success');
+                    } else if (data.error) {
+                        showToast(`❌ Error: ${data.error}`, 'error');
+                    }
+                }
+            } catch (e) {
+                console.error('Poll error:', e);
+            }
+        }
+
+        function renderEngineBattleResults(results, winner) {
+            const body = document.getElementById('engineBattleBody');
+            const container = document.getElementById('engineBattleResults');
+            container.style.display = 'block';
+
+            const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣'];
+            let html = '';
+
+            results.forEach((r, i) => {
+                const pnlColor = r.total_pnl >= 0 ? '#a6e3a1' : '#f38ba8';
+                const wrColor = r.win_rate >= 55 ? '#a6e3a1' : r.win_rate >= 45 ? '#f9e2af' : '#f38ba8';
+                const isWinner = r.engine === winner;
+                const rowBg = isWinner ? 'rgba(245, 158, 11, 0.15)' :
+                    (i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent');
+
+                html += `
+                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); background: ${rowBg};">
+                        <td style="padding: 8px 6px; font-size: 16px;">${medals[i] || ''}</td>
+                        <td style="padding: 8px 6px; font-weight: bold; color: ${isWinner ? '#f59e0b' : '#cdd6f4'};">
+                            ${r.icon} ${r.label}
+                            ${isWinner ? ' <span style="font-size: 10px; background: #f59e0b; color: #000; padding: 1px 6px; border-radius: 4px; font-weight: 700;">GANADOR</span>' : ''}
+                        </td>
+                        <td style="padding: 8px 6px; text-align: center; color: #cdd6f4;">${r.total_trades}</td>
+                        <td style="padding: 8px 6px; text-align: center; color: #a6e3a1;">${r.wins}</td>
+                        <td style="padding: 8px 6px; text-align: center; color: #f38ba8;">${r.losses}</td>
+                        <td style="padding: 8px 6px; text-align: center; color: ${wrColor}; font-weight: bold;">${r.win_rate}%</td>
+                        <td style="padding: 8px 6px; text-align: right; color: ${pnlColor}; font-weight: bold;">
+                            ${r.total_pnl >= 0 ? '+' : ''}$${r.total_pnl.toLocaleString()}
+                        </td>
+                        <td style="padding: 8px 6px; text-align: right; color: #cdd6f4;">$${r.final_balance.toLocaleString()}</td>
+                        <td style="padding: 8px 6px; text-align: center; color: #f38ba8;">${r.max_drawdown_pct}%</td>
+                        <td style="padding: 8px 6px; text-align: center; color: ${r.roi_pct >= 0 ? '#a6e3a1' : '#f38ba8'}; font-weight: bold;">${r.roi_pct >= 0 ? '+' : ''}${r.roi_pct}%</td>
+                    </tr>
+                `;
+            });
+            body.innerHTML = html;
+        }
+
+        async function stopEngineBattle() {
+            try {
+                await fetch(`${API_BASE}/simulation/engine-battle-stop`, { method: 'POST' });
+                showToast('🛑 Deteniendo batalla...', 'info');
+            } catch (e) {
+                showToast('Error al detener', 'error');
+            }
+        }
+
+
+        // ============================================
         // UTILITIES
         // ============================================
 
-        function showToast(message, type = 'info') {
+        function showBlockedModal(message, warnings) {
+            // Remove existing modal if any
+            const existing = document.getElementById('blockedModal');
+            if (existing) existing.remove();
+
+            const overlay = document.createElement('div');
+            overlay.id = 'blockedModal';
+            overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:10000;backdrop-filter:blur(4px);';
+
+            const warningItems = warnings.map(w => `<li style="margin:6px 0;font-size:14px;color:#ffcdd2;">${w}</li>`).join('');
+
+            overlay.innerHTML = `
+                <div style="background:#1a1a2e;border:2px solid #ff1744;border-radius:16px;padding:32px 40px;max-width:560px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(255,23,68,0.3);">
+                    <div style="font-size:64px;margin-bottom:12px;">⛔</div>
+                    <h2 style="color:#ff1744;margin:0 0 12px;font-size:22px;">Simulación Bloqueada</h2>
+                    <p style="color:#e0e0e0;font-size:15px;margin:0 0 20px;line-height:1.5;">${message}</p>
+                    <ul style="text-align:left;list-style:none;padding:16px;background:rgba(255,23,68,0.08);border-radius:10px;border:1px solid rgba(255,23,68,0.2);margin:0 0 24px;">
+                        ${warningItems}
+                    </ul>
+                    <p style="color:#aaa;font-size:13px;margin:0 0 20px;">Ejecute el backfill de indicadores o espere a que termine antes de simular.</p>
+                    <button onclick="document.getElementById('blockedModal').remove()" 
+                            style="background:linear-gradient(135deg,#ff1744,#d50000);color:white;border:none;padding:12px 32px;border-radius:8px;font-size:15px;cursor:pointer;font-weight:600;transition:transform 0.15s;">
+                        Entendido
+                    </button>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+        }
+
+        function showToast(message, type = 'info', duration = 3000) {
             const toast = document.createElement('div');
             toast.className = `toast ${type}`;
             toast.textContent = message;
             document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 3000);
+            setTimeout(() => toast.remove(), duration);
         }
     </script>
 

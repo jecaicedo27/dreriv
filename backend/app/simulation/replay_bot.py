@@ -32,12 +32,40 @@ class ReplayBotSimulator:
     def __init__(self, config: dict = None):
         self.config = config or {}
         self.min_confidence = self.config.get('min_confidence', 0.60)
+        self.max_confidence = self.config.get('max_confidence', 1.0)
         self.default_stake = self.config.get('stake', 60.0)
-        self.payout_rate = self.config.get('payout_rate', 0.84)
+        self.payout_rate = self.config.get('payout_rate', 0.95)
         self.trade_duration_candles = self.config.get('duration_candles', 5)
         self.initial_balance = self.config.get('initial_balance', 10000.0)
         self.cooldown_candles = self.config.get('cooldown_candles', 3)
         self.use_groq = self.config.get('use_groq', True)
+        self.hurst_min = self.config.get('hurst_min', 0.6)
+        self.hurst_max = self.config.get('hurst_max', 0.7)
+        self.blocked_hours = set(self.config.get('blocked_hours', []))  # Colombia time hours to skip
+        self.engine_name = self.config.get('engine_name', 'original_v1')
+        self.dir_cooldown_candles = self.config.get('dir_cooldown_candles', 30)  # 0 to disable
+        self.dir_cooldown_losses = self.config.get('dir_cooldown_losses', 3)
+        
+        # ===== DEFENSIVE FILTERS =====
+        # Filter 1: Real-time WR monitoring (early stop)
+        self.wr_check_interval = self.config.get('wr_check_interval', 15)  # Check every N trades
+        self.wr_pause_threshold = self.config.get('wr_pause_threshold', 0.45)  # Pause if WR < this after 20+ trades
+        self.wr_stop_threshold = self.config.get('wr_stop_threshold', 0.40)   # Stop day if WR < this after 30+ trades
+        self.wr_pause_candles = self.config.get('wr_pause_candles', 30)  # How long to pause
+        self.wr_min_trades_pause = self.config.get('wr_min_trades_pause', 20)  # Min trades before pause check
+        self.wr_min_trades_stop = self.config.get('wr_min_trades_stop', 30)   # Min trades before stop check
+        self.enable_wr_monitor = self.config.get('enable_wr_monitor', True)
+        
+        # Filter 2: Global streak protection (any direction)
+        self.global_streak_limit = self.config.get('global_streak_limit', 5)  # Consecutive losses any dir → pause
+        self.global_streak_pause = self.config.get('global_streak_pause', 60)  # Pause candles after global streak
+        self.enable_global_streak = self.config.get('enable_global_streak', True)
+        
+        # Filter 3: ATR volatility gate
+        self.atr_lookback = self.config.get('atr_lookback', 30)  # ATR lookback window
+        self.atr_low_mult = self.config.get('atr_low_mult', 0.5)   # Skip if ATR < avg * this
+        self.atr_high_mult = self.config.get('atr_high_mult', 2.0)  # Skip if ATR > avg * this  
+        self.enable_atr_gate = self.config.get('enable_atr_gate', True)
 
     def run(self, db: Session, date: str, symbol: str = 'R_100') -> Dict[str, Any]:
         """
@@ -49,23 +77,75 @@ class ReplayBotSimulator:
     async def _run_async(self, db: Session, date: str, symbol: str = 'R_100') -> Dict[str, Any]:
         """Async simulation loop with Groq Layer 2 support"""
 
-        # Load all candles for the date
+        # === PERF: Suppress heavy DEBUG logging during simulation ===
+        import logging as _logging
+        _noisy_loggers = [
+            'app.analysis.garch', 'app.analysis.hurst',
+            'app.analysis.ornstein_uhlenbeck', 'app.analysis.indicators',
+            'app.analysis.reversal_engine',
+            'app.analysis.bullish_engine', 'app.analysis.university_engine',
+        ]
+        _saved_levels = {}
+        for _lg_name in _noisy_loggers:
+            _lg = _logging.getLogger(_lg_name)
+            _saved_levels[_lg_name] = _lg.level
+            _lg.setLevel(_logging.WARNING)
+
+        from app.simulation.trading_core import TradingCore  # Import once, not per-candle
+
+        # Load lookback (300 prior candles) + all candles for the date
+        # This matches bot_step which uses 300 lookback candles for indicator context
+        # Load lookback (300 prior candles) + all candles for the date
+        # This matches bot_step which uses 300 lookback candles for indicator context
         result = db.execute(text("""
+            WITH date_candles AS (
             SELECT open_time, open, high, low, close,
                    rsi_14, ema_9, ema_21, ema_50,
                    macd, macd_signal, macd_histogram,
                    bollinger_upper, bollinger_middle, bollinger_lower,
-                   hurst_exponent, ou_deviation, regime,
+                   hurst_exponent, hurst_fast, ou_deviation, regime,
                    returns, momentum_5, volatility_realized, price_position,
-                   atr_14
+                   atr_14, garch_volatility_forecast,
+                   adx_14, plus_di, minus_di
             FROM candles
             WHERE symbol = :symbol
               AND DATE(open_time AT TIME ZONE 'America/Bogota') = :date
             ORDER BY open_time ASC
+        ),
+        lookback_candles AS (
+            SELECT open_time, open, high, low, close,
+                   rsi_14, ema_9, ema_21, ema_50,
+                   macd, macd_signal, macd_histogram,
+                   bollinger_upper, bollinger_middle, bollinger_lower,
+                   hurst_exponent, hurst_fast, ou_deviation, regime,
+                   returns, momentum_5, volatility_realized, price_position,
+                   atr_14, garch_volatility_forecast,
+                   adx_14, plus_di, minus_di
+            FROM candles
+            WHERE symbol = :symbol
+              AND open_time < (SELECT MIN(open_time) FROM date_candles)
+            ORDER BY open_time DESC
+            LIMIT 300
+        )
+            SELECT * FROM (SELECT * FROM lookback_candles ORDER BY open_time ASC) lb
+            UNION ALL
+            SELECT * FROM date_candles
         """), {"symbol": symbol, "date": date}).fetchall()
 
-        if len(result) < 100:
-            return {"error": f"Insufficient data: {len(result)} candles (need 100+)"}
+        # Count lookback vs date candles
+        from datetime import datetime as dt_parser, timedelta
+        date_obj = dt_parser.strptime(date, "%Y-%m-%d").date()
+        lookback_count = 0
+        for row in result:
+            col_time = row.open_time - timedelta(hours=5) if row.open_time.tzinfo else row.open_time
+            if col_time.date() < date_obj:
+                lookback_count += 1
+            else:
+                break
+
+        date_candle_count = len(result) - lookback_count
+        if date_candle_count < 100:
+            return {"error": f"Insufficient date candles: {date_candle_count} (need 100+)"}
 
         # Convert to DataFrame
         columns = [
@@ -73,9 +153,10 @@ class ReplayBotSimulator:
             'rsi_14', 'ema_9', 'ema_21', 'ema_50',
             'macd', 'macd_signal', 'macd_histogram',
             'bollinger_upper', 'bollinger_middle', 'bollinger_lower',
-            'hurst_exponent', 'ou_deviation', 'regime',
+            'hurst_exponent', 'hurst_fast', 'ou_deviation', 'regime',
             'returns', 'momentum_5', 'volatility_realized', 'price_position',
-            'atr_14'
+            'atr_14', 'garch_volatility_forecast',
+            'adx_14', 'plus_di', 'minus_di'
         ]
         df = pd.DataFrame([dict(zip(columns, row)) for row in result])
 
@@ -83,21 +164,31 @@ class ReplayBotSimulator:
         numeric_cols = [c for c in columns if c not in ('open_time', 'regime')]
         for col in numeric_cols:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(float)
+            
+        # Add required missing indicators in one batch to prevent safe_analyze from recalculating per-candle
+        from app.analysis.indicators import TechnicalIndicators
+        df = TechnicalIndicators.calculate_all(df)
 
-        # Initialize engines
-        from app.analysis.layer1_engine import Layer1SignalEngine
-        engine = Layer1SignalEngine()
+        # Initialize analysis engine via registry
+        from app.analysis.engine_registry import get_engine
+        engine = get_engine(self.engine_name)
 
-        # Initialize Groq Layer 2 if enabled
-        layer2 = None
-        if self.use_groq:
-            try:
-                from app.analysis.layer2_groq import get_layer2_engine
-                layer2 = get_layer2_engine()
-                logger.info("🧠 Groq Layer 2 enabled for simulation")
-            except Exception as e:
-                logger.warning(f"⚠️ Groq Layer 2 unavailable: {e} — falling back to L1 only")
-                layer2 = None
+        # Direction-aware consecutive loss tracking (matches frontend exactly)
+        consec_losses_same_dir = 0
+        last_loss_dir = None
+        dir_cooldown_until = 0
+
+        # ===== DEFENSIVE STATE =====
+        # Filter 1: WR monitor
+        day_wins = 0
+        day_losses = 0
+        day_stopped = False  # True if WR monitor or PnL stop halted the day
+        wr_pause_until = 0   # Candle index to resume after WR pause
+        
+        # Filter 2: Global streak protection
+        global_consec_losses = 0
+        global_streak_pause_until = 0
+        
 
         # Run simulation
         balance = self.initial_balance
@@ -106,95 +197,65 @@ class ReplayBotSimulator:
         cooldown_until = 0
 
         total_candles = len(df)
-        logger.info(f"🤖 Bot simulation: {total_candles} candles for {date} (Groq={'ON' if layer2 else 'OFF'})")
+        logger.info(f"🤖 Bot simulation: {date_candle_count} date candles + {lookback_count} lookback (Groq={'ON' if self.use_groq else 'OFF'})")
 
-        groq_calls = 0
-        groq_overrides = 0
-
-        for i in range(50, total_candles - self.trade_duration_candles):
-            # Skip if in cooldown
+        # Iterate only over date candles (after lookback)
+        for i in range(lookback_count, total_candles - self.trade_duration_candles):
+            # ===== FILTER 1: WR MONITOR — day stopped =====
+            if day_stopped:
+                break
+            
+            # Skip if in post-trade cooldown
             if i < cooldown_until:
                 continue
 
-            # Get rolling window (last 250 candles or available)
-            start_idx = max(0, i - 250)
-            window = df.iloc[start_idx:i + 1].copy()
+            # Skip if in direction-aware cooldown (3 consecutive losses in same direction → 30 candle pause)
+            if i < dir_cooldown_until:
+                continue
+            
+            # ===== FILTER 1: WR MONITOR — pause check =====
+            if self.enable_wr_monitor and i < wr_pause_until:
+                continue
+            
+            # ===== FILTER 2: GLOBAL STREAK — pause check =====
+            if self.enable_global_streak and i < global_streak_pause_until:
+                continue
 
             try:
-                # ===== LAYER 1: Statistical Analysis =====
-                signal = engine.analyze(window, symbol)
+                # ===== HOUR FILTER: skip blocked hours (Colombia time = UTC-5) =====
+                if self.blocked_hours:
+                    candle_time = df.iloc[i]['open_time']
+                    col_hour = (candle_time - timedelta(hours=5)).hour if hasattr(candle_time, 'hour') else -1
+                    if col_hour in self.blocked_hours:
+                        continue
+                
+                # ===== FILTER 3: ATR VOLATILITY GATE =====
+                if self.enable_atr_gate and i >= self.atr_lookback:
+                    recent_atrs = df.iloc[i - self.atr_lookback:i]['atr_14'].values
+                    avg_atr = float(recent_atrs.mean()) if len(recent_atrs) > 0 else 0
+                    current_atr = float(df.iloc[i]['atr_14']) if df.iloc[i]['atr_14'] else 0
+                    if avg_atr > 0 and current_atr > 0:
+                        atr_ratio = current_atr / avg_atr
+                        if atr_ratio < self.atr_low_mult:
+                            continue  # Market too quiet, no edge
 
-                l1_signal = signal.get('final_signal', 'HOLD')
-                l1_confidence = signal.get('final_confidence', 0.0)
-                l1_reasoning = signal.get('reasoning', '')
+                # ===== THE SINGLE BRAIN — TradingCore =====
+                candle_window = df.iloc[max(0, i - 249):i + 1]  # View, no copy
+                result = await TradingCore.analyze_async(
+                    engine=engine,
+                    df=candle_window,
+                    symbol=symbol,
+                    use_groq=self.use_groq,
+                    ai_provider=self.config.get('ai_provider', 'groq'),
+                    hurst_min=self.hurst_min,
+                    hurst_max=self.hurst_max,
+                )
 
-                # ===== LAYER 2: Groq AI Meta-Analysis =====
-                groq_used = False
-                groq_reasoning_text = ""
-
-                if layer2:
-                    hurst_value = signal.get('hurst_signal', {}).get('hurst', 0.5)
-
-                    # Same trigger logic as live bot
-                    should_call_groq = (
-                        l1_signal in ['CALL', 'PUT'] or
-                        hurst_value >= 0.55
-                    )
-
-                    if should_call_groq:
-                        try:
-                            # Build candle objects for Groq context (last 25)
-                            candle_start = max(0, i - 24)
-                            candles_for_groq = [
-                                SimpleCandle(df.iloc[j])
-                                for j in range(candle_start, i + 1)
-                            ]
-
-                            # Call Groq (NO db writes — pass db=None)
-                            groq_result = await layer2.analyze(
-                                layer1_signal=signal,
-                                candles=candles_for_groq,
-                                db=None  # No DB writes in simulation
-                            )
-
-                            groq_calls += 1
-                            groq_used = True
-
-                            # Groq is the FINAL decision maker
-                            final_signal = groq_result.get('decision', groq_result.get('final_signal', 'HOLD'))
-                            confidence = groq_result.get('confidence', groq_result.get('final_confidence', 0.0))
-
-                            # Extract reasoning
-                            reasoning_chain = groq_result.get('reasoning_chain', {})
-                            if isinstance(reasoning_chain, dict):
-                                groq_reasoning_text = reasoning_chain.get(
-                                    'step6_final_decision_rationale',
-                                    str(reasoning_chain)[:200]
-                                )
-                            else:
-                                groq_reasoning_text = str(reasoning_chain)[:200]
-
-                            if final_signal != l1_signal:
-                                groq_overrides += 1
-                                logger.debug(f"🔄 Groq override @ {i}: L1={l1_signal} → Groq={final_signal}")
-
-                        except Exception as e:
-                            logger.warning(f"⚠️ Groq error @ candle {i}: {e}")
-                            # Fallback to Layer 1
-                            final_signal = l1_signal
-                            confidence = l1_confidence
-                            groq_used = False
-                    else:
-                        # Market not qualifying for Groq
-                        final_signal = l1_signal
-                        confidence = l1_confidence
-                else:
-                    # Groq disabled — pure Layer 1
-                    final_signal = l1_signal
-                    confidence = l1_confidence
+                final_signal = result["action"]
+                confidence = result["confidence"]
 
                 # ===== EXECUTE TRADE =====
-                if final_signal in ('CALL', 'PUT') and confidence >= self.min_confidence:
+                if final_signal in ('CALL', 'PUT') and confidence >= self.min_confidence and confidence < self.max_confidence:
                     entry_candle = df.iloc[i]
                     exit_idx = i + self.trade_duration_candles
                     exit_candle = df.iloc[exit_idx]
@@ -208,14 +269,65 @@ class ReplayBotSimulator:
                     else:
                         won = exit_price < entry_price
 
-                    pnl = self.default_stake * self.payout_rate if won else -self.default_stake
+                    # === Kelly stake — EXACT same formula as frontend ===
+                    conf = max(confidence, 0.60)
+                    stake_pct = 0.013 + (min(conf, 0.95) - 0.60) * ((0.015 - 0.013) / (0.95 - 0.60))
+                    stake_pct = max(0.013, min(0.015, stake_pct))
+                    stake = max(0.35, balance * stake_pct)
+
+                    # Payout = 0.95 (matches frontend)
+                    pnl = stake * 0.95 if won else -stake
                     balance += pnl
+
+                    # === Direction-aware consecutive loss tracking (matches frontend) ===
+                    if not won:
+                        day_losses += 1
+                        global_consec_losses += 1
+                        if last_loss_dir == final_signal:
+                            consec_losses_same_dir += 1
+                        else:
+                            consec_losses_same_dir = 1
+                            last_loss_dir = final_signal
+                        # Trigger configurable direction cooldown
+                        if self.dir_cooldown_candles > 0 and consec_losses_same_dir >= self.dir_cooldown_losses:
+                            dir_cooldown_until = exit_idx + self.dir_cooldown_candles
+                            consec_losses_same_dir = 0
+                            logger.info(f"⏸️ Direction cooldown: {self.dir_cooldown_losses} {final_signal} losses → pause until candle {dir_cooldown_until}")
+                        
+                        # ===== FILTER 2: GLOBAL STREAK CHECK =====
+                        if self.enable_global_streak and global_consec_losses >= self.global_streak_limit:
+                            global_streak_pause_until = exit_idx + self.global_streak_pause
+                            global_consec_losses = 0
+                            logger.info(f"🛑 Global streak: {self.global_streak_limit} consecutive losses → pause {self.global_streak_pause} candles")
+                    else:
+                        day_wins += 1
+                        # Win resets all consecutive counters
+                        consec_losses_same_dir = 0
+                        last_loss_dir = None
+                        global_consec_losses = 0
+                    
+                    # ===== FILTER 1: WR MONITOR CHECK =====
+                    total_day_trades = day_wins + day_losses
+                    if self.enable_wr_monitor and total_day_trades > 0:
+                        current_wr = day_wins / total_day_trades
+                        # Hard stop: WR too low after enough trades
+                        if total_day_trades >= self.wr_min_trades_stop and current_wr < self.wr_stop_threshold:
+                            day_stopped = True
+                            logger.info(f"🚫 WR Monitor STOP: {current_wr:.1%} WR after {total_day_trades} trades — stopping day")
+                        # Soft pause: WR concerning
+                        elif total_day_trades >= self.wr_min_trades_pause and current_wr < self.wr_pause_threshold:
+                            wr_pause_until = exit_idx + self.wr_pause_candles
+                            logger.info(f"⏸️ WR Monitor PAUSE: {current_wr:.1%} WR after {total_day_trades} trades — pause {self.wr_pause_candles} candles")
+                    
 
                     trade = {
                         "index": i,
-                        "time": str(entry_candle['open_time']),
+                        "candle_index": i - lookback_count,
+                        "exit_candle_index": exit_idx - lookback_count,
+                        "time": str(entry_candle['open_time'] - timedelta(hours=5)),
                         "timestamp": int(entry_candle['open_time'].timestamp()),
                         "direction": final_signal,
+                        "stake": round(stake, 2),
                         "entry_price": round(entry_price, 2),
                         "exit_price": round(exit_price, 2),
                         "exit_index": exit_idx,
@@ -223,16 +335,23 @@ class ReplayBotSimulator:
                         "pnl": round(pnl, 2),
                         "balance_after": round(balance, 2),
                         "confidence": round(confidence, 3),
-                        "groq_used": groq_used,
-                        "l1_signal": l1_signal,
-                        "l1_confidence": round(l1_confidence, 3),
-                        "reasoning": groq_reasoning_text[:200] if groq_used else l1_reasoning[:200],
-                        "groq_reasoning": groq_reasoning_text[:300] if groq_used else ""
+                        "groq_used": result["groq_used"],
+                        "l1_signal": result["l1_signal"],
+                        "l1_confidence": result["l1_confidence"],
+                        "reasoning": result["reasoning"][:200],
+                        "groq_reasoning": result["groq_reasoning"][:300] if result["groq_used"] else "",
+                        # Technical indicators at entry
+                        "hurst": result.get("hurst", 0),
+                        "rsi_14": result.get("rsi_14", 0),
+                        "ema_9": result.get("ema_9", 0),
+                        "ema_21": result.get("ema_21", 0),
+                        "macd_histogram": result.get("macd_histogram", 0),
+                        "bb_width": result.get("bb_width", 0),
                     }
                     trades.append(trade)
                     equity_curve.append({"index": i, "balance": round(balance, 2)})
 
-                    # Set cooldown
+                    # Set post-trade cooldown (exit_index + 3, same as frontend BOT_COOLDOWN)
                     cooldown_until = exit_idx + self.cooldown_candles
 
             except Exception as e:
@@ -255,6 +374,8 @@ class ReplayBotSimulator:
             if dd > max_drawdown:
                 max_drawdown = dd
 
+        groq_trades = sum(1 for t in trades if t.get('groq_used'))
+
         summary = {
             "total_trades": total_trades,
             "wins": wins,
@@ -267,15 +388,20 @@ class ReplayBotSimulator:
             "payout_rate": self.payout_rate,
             "stake": self.default_stake,
             "date": date,
-            "groq_enabled": layer2 is not None,
-            "groq_calls": groq_calls,
-            "groq_overrides": groq_overrides
+            "lookback_count": lookback_count,
+            "groq_enabled": self.use_groq,
+            "groq_calls": groq_trades,
+            "groq_overrides": 0
         }
 
         logger.success(
             f"✅ Bot sim complete: {total_trades} trades, {win_rate}% win, PnL=${total_pnl} "
-            f"(Groq: {groq_calls} calls, {groq_overrides} overrides)"
+            f"(Groq: {groq_trades} trades)"
         )
+
+        # === PERF: Restore log levels ===
+        for _lg_name, _lvl in _saved_levels.items():
+            _logging.getLogger(_lg_name).setLevel(_lvl)
 
         return {
             "trades": trades,

@@ -76,17 +76,6 @@ class TradeExecutor:
         
         stake = stake_info['stake']
         
-        # Progressive stake reduction on consecutive losses
-        # Each loss halves the stake, minimum $10. Resets to full on win.
-        consec_losses = self.risk_manager.bot_state.losses_consecutive or 0
-        if consec_losses > 0:
-            original_stake = stake
-            for _ in range(consec_losses):
-                stake = stake / 2
-            stake = max(stake, settings.MIN_STAKE)  # Floor at $10
-            stake = round(stake, 2)
-            logger.info(f"📉 Stake reduced: ${original_stake:.2f} → ${stake:.2f} ({consec_losses} consecutive losses)")
-        
         logger.info(f"🎯 Executing trade: {symbol} {direction} ${stake:.2f} ({duration}s)")
         
         # Execute via Deriv WebSocket
@@ -131,6 +120,7 @@ class TradeExecutor:
             kelly_fraction=stake_info['base_kelly_stake'] / balance if balance > 0 else 0,
             drawdown_multiplier=drawdown_mult,
             hurst_at_entry=signal.get('hurst_signal', {}).get('hurst'),
+            engine_name=signal.get('engine_name'),
             
             # Deriv contract ID
             deriv_contract_id=contract.get('contract_id')

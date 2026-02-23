@@ -68,6 +68,28 @@ class RiskManager:
                 'severity': 'WARNING'
             }
         
+        # ─── Limit concurrent pending trades ───
+        # Without this, bot opens trades every minute while 5-min trades are
+        # still running, bypassing ALL risk controls (DB trigger only fires
+        # when trades resolve from PENDING → WIN/LOSS).
+        # Allow up to 2 concurrent trades so we don't miss opportunities,
+        # but prevent 5+ overlapping trades that bypass all checks.
+        MAX_CONCURRENT_PENDING = 2
+        try:
+            from app.models.models import Trade
+            pending_count = self.db.query(Trade).filter(
+                Trade.outcome == 'PENDING'
+            ).count()
+            
+            if pending_count >= MAX_CONCURRENT_PENDING:
+                return {
+                    'allowed': False,
+                    'reason': f'{pending_count} trades pending (max {MAX_CONCURRENT_PENDING}) — waiting for resolution',
+                    'severity': 'INFO'
+                }
+        except Exception as e:
+            logger.debug(f"Pending trade check error: {e}")
+        
         # Check cooldown
         if self.bot_state.cooldown_until:
             if datetime.now(timezone.utc) < self.bot_state.cooldown_until:
@@ -135,6 +157,38 @@ class RiskManager:
                 # No trade history — just reset
                 self.bot_state.losses_consecutive = 0
                 self.db.commit()
+        
+        # Check direction-aware consecutive losses (trend reversal detection)
+        # If last 3 trades are all LOSS in the same direction → trend likely reversed
+        try:
+            from app.models.models import Trade
+            recent_trades = self.db.query(Trade).order_by(Trade.entry_time.desc()).limit(3).all()
+            
+            if len(recent_trades) >= 3:
+                all_same_dir_losses = (
+                    all(t.outcome == 'LOSS' for t in recent_trades) and
+                    len(set(t.direction for t in recent_trades)) == 1  # All same direction
+                )
+                
+                if all_same_dir_losses:
+                    direction = recent_trades[0].direction
+                    # Check we haven't already cooled down for this pattern
+                    last_trade_time = recent_trades[0].entry_time
+                    if last_trade_time:
+                        time_since = (datetime.now(timezone.utc) - last_trade_time.replace(tzinfo=timezone.utc)).total_seconds() / 60
+                        if time_since < 30:  # Only trigger if recent
+                            self._activate_cooldown(
+                                minutes=30,
+                                reason=f'3 {direction} losses seguidos — posible cambio de tendencia'
+                            )
+                            logger.warning(f"🔄 Trend reversal detected: 3 consecutive {direction} losses")
+                            return {
+                                'allowed': False,
+                                'reason': f'Cooldown: 3 {direction} losses seguidos, posible cambio de tendencia',
+                                'severity': 'WARNING'
+                            }
+        except Exception as e:
+            logger.debug(f"Direction loss check: {e}")
         
         # Check daily trade limit
         if self.bot_state.trades_today >= settings.MAX_TRADES_PER_DAY:

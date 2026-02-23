@@ -16,6 +16,8 @@ from datetime import datetime
 from decimal import Decimal
 
 # Custom JSON encoder that handles numpy types
+import math
+
 class NumpyEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, np.bool_):
@@ -23,7 +25,10 @@ class NumpyEncoder(json.JSONEncoder):
         if isinstance(obj, np.integer):
             return int(obj)
         if isinstance(obj, np.floating):
-            return float(obj)
+            val = float(obj)
+            if math.isinf(val) or math.isnan(val):
+                return None
+            return val
         if isinstance(obj, np.ndarray):
             return obj.tolist()
         if isinstance(obj, (pd.Timestamp, datetime)):
@@ -31,6 +36,18 @@ class NumpyEncoder(json.JSONEncoder):
         if isinstance(obj, Decimal):
             return float(obj)
         return super().default(obj)
+
+def _sanitize(obj):
+    """Replace Infinity/NaN with None recursively so JSON is valid."""
+    if isinstance(obj, float):
+        if math.isinf(obj) or math.isnan(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize(v) for v in obj]
+    return obj
 
 
 router = APIRouter()
@@ -63,64 +80,128 @@ async def get_analysis_metrics(db: Session = Depends(get_db)):
             'volume': float(c.volume) if c.volume else 0
         } for c in candles])
         
-        # Run Layer 1 analysis
-        engine = Layer1SignalEngine()
-        result = engine.analyze(df, 'R_100')
+        # Use the configured engine (same as live bot)
+        from app.core.config import get_settings
+        from app.analysis.engine_registry import get_engine, get_engine_config
+        from app.simulation.trading_core import TradingCore
+        _settings = get_settings()
+        engine_name = _settings.ENGINE_NAME
+        engine_cfg = get_engine_config(engine_name)
+        engine = get_engine(engine_name)
+        
+        hurst_min = engine_cfg.get('hurst_min', 0.6)
+        hurst_max = engine_cfg.get('hurst_max', 0.7)
+        blocked_hours = engine_cfg.get('blocked_hours', [])
+        
+        # ===== ALWAYS calculate Hurst & O-U independently for dashboard display =====
+        from app.analysis.hurst import HurstExponent
+        from app.analysis.ornstein_uhlenbeck import OrnsteinUhlenbeckModel
+        
+        hurst_signal = {"hurst": 0.5, "regime": "UNKNOWN", "interpretation": ""}
+        try:
+            hurst_signal = HurstExponent.get_signal(df['close'], window=200)
+        except Exception as e:
+            logging.debug(f"Hurst calc error: {e}")
+        
+        ou_signal = {"signal": "HOLD", "deviation": 0, "confidence": 0}
+        try:
+            ou_model = OrnsteinUhlenbeckModel(window=200)
+            ou_model.fit(df['close'].values)
+            current_price = float(df['close'].iloc[-1])
+            ou_signal = ou_model.get_signal(current_price, threshold=2.0)
+        except Exception as e:
+            logging.debug(f"O-U calc error: {e}")
+        
+        # ===== COMPUTE TECHNICAL INDICATORS (separate from engine) =====
+        df = TechnicalIndicators.calculate_all(df)
+        indicator_values = TechnicalIndicators.get_latest_values(df)
+        
+        # ===== ENGINE SIGNAL via TradingCore (consumes pre-calculated indicators) =====
+        result = TradingCore.analyze(
+            engine=engine,
+            df=df,
+            symbol='R_100',
+            use_groq=False,
+            hurst_min=hurst_min,
+            hurst_max=hurst_max,
+        )
+        
+        # Check if current hour is blocked (Colombia time)
+        from datetime import timezone, timedelta
+        col_tz = timezone(timedelta(hours=-5))
+        col_hour = datetime.now(col_tz).hour
+        hour_blocked = col_hour in blocked_hours
+        
+        # Map TradingCore output to display
+        effective_signal = result.get('action', result.get('final_signal', 'HOLD'))
+        effective_confidence = result.get('confidence', result.get('final_confidence', 0))
+        effective_reasoning = result.get('reasoning', '')
+        
+        if hour_blocked:
+            effective_signal = 'BLOCKED'
+            effective_confidence = 0
+            effective_reasoning = f'🚫 Hora {col_hour:02d} bloqueada por motor {engine_name}'
         
         response = {
             "status": "ok",
-            "timestamp": result.get('timestamp'),
-            "current_price": result.get('current_price'),
+            "timestamp": datetime.utcnow().isoformat(),
+            "current_price": result.get('entry_price', float(df['close'].iloc[-1])),
             
-            # Hurst metrics
-            "hurst": {
-                "value": result['hurst_signal'].get('hurst', 0.5),
-                "regime": result['hurst_signal'].get('regime', 'UNKNOWN'),
-                "trend_strength": round(abs(float(result['hurst_signal'].get('hurst', 0.5)) - 0.5), 3),
-                "strength_threshold": 0.10,
-                "strength_sufficient": abs(float(result['hurst_signal'].get('hurst', 0.5)) - 0.5) >= 0.10,
-                "interpretation": result['hurst_signal'].get('interpretation', '')
+            # Engine info
+            "engine": {
+                "name": engine_name,
+                "hurst_min": hurst_min,
+                "hurst_max": hurst_max,
+                "blocked_hours": blocked_hours,
+                "current_hour_col": col_hour,
+                "hour_blocked": hour_blocked,
             },
             
-            # O-U metrics
+            # Hurst metrics (calculated independently — always live)
+            "hurst": {
+                "value": hurst_signal.get('hurst', 0.5),
+                "regime": hurst_signal.get('regime', 'UNKNOWN'),
+                "trend_strength": round(abs(float(hurst_signal.get('hurst', 0.5)) - 0.5), 3),
+                "strength_threshold": 0.10,
+                "strength_sufficient": abs(float(hurst_signal.get('hurst', 0.5)) - 0.5) >= 0.10,
+                "interpretation": hurst_signal.get('interpretation', '')
+            },
+            
+            # O-U metrics (calculated independently — always live)
             "ou": {
-                "signal": result['ou_signal'].get('signal', 'HOLD'),
-                "deviation": result['ou_signal'].get('deviation', 0),
-                "confidence": result['ou_signal'].get('confidence', 0),
-                "half_life": result['ou_signal'].get('half_life'),
-                "theta": result['ou_signal'].get('theta'),
-                "reason": result['ou_signal'].get('reason', '')
+                "signal": ou_signal.get('signal', 'HOLD'),
+                "deviation": ou_signal.get('deviation', 0),
+                "confidence": ou_signal.get('confidence', 0),
+                "half_life": ou_signal.get('half_life'),
+                "theta": ou_signal.get('theta'),
+                "reason": ou_signal.get('reason', '')
             },
             
             # GARCH metrics
             "garch": {
-                "regime": result['garch_signal'].get('regime', 'UNKNOWN'),
-                "current_vol": result['garch_signal'].get('current_vol'),
-                "forecast_vol": result['garch_signal'].get('forecast_vol'),
-                "stake_multiplier": result['garch_signal'].get('stake_multiplier', 1.0)
+                "regime": result.get('garch_signal', {}).get('regime', 'N/A'),
+                "current_vol": result.get('garch_signal', {}).get('current_vol'),
+                "forecast_vol": result.get('garch_signal', {}).get('forecast_vol'),
+                "stake_multiplier": result.get('garch_signal', {}).get('stake_multiplier', 1.0)
             },
             
-            # Final signal
+            # Final signal (with engine filter applied)
             "signal": {
-                "direction": result.get('final_signal', 'HOLD'),
-                "confidence": result.get('final_confidence', 0),
+                "direction": effective_signal,
+                "confidence": effective_confidence,
                 "contract_type": result.get('contract_type'),
                 "duration": result.get('duration', 300),
-                "reasoning": result.get('reasoning', '')
+                "reasoning": effective_reasoning,
+                "raw_signal": result.get('final_signal', 'HOLD'),
+                "raw_confidence": result.get('final_confidence', 0),
             },
             
-            # Technical indicators
-            "indicators": {
-                "rsi_14": result['indicators'].get('rsi_14'),
-                "ema_9": result['indicators'].get('ema_9'),
-                "ema_21": result['indicators'].get('ema_21'),
-                "macd": result['indicators'].get('macd'),
-                "macd_signal": result['indicators'].get('macd_signal')
-            }
+            # Technical indicators (calculated independently — always live)
+            "indicators": indicator_values
         }
         
-        # Use custom encoder to handle numpy types
-        json_str = json.dumps(response, cls=NumpyEncoder)
+        # Use custom encoder to handle numpy types, and sanitize Infinity/NaN
+        json_str = json.dumps(_sanitize(response), cls=NumpyEncoder)
         return Response(content=json_str, media_type="application/json")
         
     except Exception as e:

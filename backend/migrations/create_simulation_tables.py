@@ -13,54 +13,55 @@ def upgrade():
     """Create simulation sandbox tables"""
     
     with engine.connect() as conn:
-        # 1. Historical Candles (6 months data)
-        conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS historical_candles (
-                id BIGSERIAL PRIMARY KEY,
-                symbol VARCHAR(20) NOT NULL,
-                timeframe VARCHAR(10) NOT NULL,
-                open_time TIMESTAMP WITH TIME ZONE NOT NULL,
-                close_time TIMESTAMP WITH TIME ZONE,
-                
-                -- OHLCV
-                open NUMERIC(18, 8),
-                high NUMERIC(18, 8),
-                low NUMERIC(18, 8),
-                close NUMERIC(18, 8),
-                volume BIGINT,
-                
-                -- Pre-calculated indicators
-                rsi_14 NUMERIC(10, 4),
-                ema_9 NUMERIC(18, 8),
-                ema_21 NUMERIC(18, 8),
-                ema_50 NUMERIC(18, 8),
-                macd NUMERIC(18, 8),
-                macd_signal NUMERIC(18, 8),
-                macd_histogram NUMERIC(18, 8),
-                bollinger_upper NUMERIC(18, 8),
-                bollinger_middle NUMERIC(18, 8),
-                bollinger_lower NUMERIC(18, 8),
-                atr_14 NUMERIC(18, 8),
-                returns NUMERIC(18, 8),
-                momentum_5 NUMERIC(18, 8),
-                volatility_realized NUMERIC(18, 8),
-                price_position NUMERIC(10, 4),
-                
-                created_at TIMESTAMP DEFAULT NOW(),
-                UNIQUE(symbol, timeframe, open_time)
-            );
-        """))
-        
-        # Indexes for fast queries
-        conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_hist_candles_time 
-            ON historical_candles(open_time DESC);
-        """))
-        
-        conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_hist_candles_symbol_time 
-            ON historical_candles(symbol, open_time DESC);
-        """))
+        if False: # DEPRECATED: Historical data is now in 'candles' table
+            # 1. Historical Candles (6 months data)
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS historical_candles (
+                    id BIGSERIAL PRIMARY KEY,
+                    symbol VARCHAR(20) NOT NULL,
+                    timeframe VARCHAR(10) NOT NULL,
+                    open_time TIMESTAMP WITH TIME ZONE NOT NULL,
+                    close_time TIMESTAMP WITH TIME ZONE,
+                    
+                    -- OHLCV
+                    open NUMERIC(18, 8),
+                    high NUMERIC(18, 8),
+                    low NUMERIC(18, 8),
+                    close NUMERIC(18, 8),
+                    volume BIGINT,
+                    
+                    -- Pre-calculated indicators
+                    rsi_14 NUMERIC(10, 4),
+                    ema_9 NUMERIC(18, 8),
+                    ema_21 NUMERIC(18, 8),
+                    ema_50 NUMERIC(18, 8),
+                    macd NUMERIC(18, 8),
+                    macd_signal NUMERIC(18, 8),
+                    macd_histogram NUMERIC(18, 8),
+                    bollinger_upper NUMERIC(18, 8),
+                    bollinger_middle NUMERIC(18, 8),
+                    bollinger_lower NUMERIC(18, 8),
+                    atr_14 NUMERIC(18, 8),
+                    returns NUMERIC(18, 8),
+                    momentum_5 NUMERIC(18, 8),
+                    volatility_realized NUMERIC(18, 8),
+                    price_position NUMERIC(10, 4),
+                    
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    UNIQUE(symbol, timeframe, open_time)
+                );
+            """))
+            
+            # Indexes for fast queries
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_hist_candles_time 
+                ON historical_candles(open_time DESC);
+            """))
+            
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_hist_candles_symbol_time 
+                ON historical_candles(symbol, open_time DESC);
+            """))
         
         # 2. Simulation Runs (backtest metadata)
         conn.execute(text("""

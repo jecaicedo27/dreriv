@@ -54,6 +54,7 @@ def update_accu_state(bot):
         "cooldown_until": str(bot.cooldown_until) if bot.cooldown_until else None,
         "last_updated": datetime.now().isoformat(),
         # Config values (read live from bot config)
+        "symbol": bot.config.SYMBOL,
         "stake": bot.config.STAKE,
         "growth_rate": bot.config.GROWTH_RATE,
         "take_profit": bot.config.TAKE_PROFIT,
@@ -113,11 +114,15 @@ def log_accu_trade(trade_data: dict):
 
 
 # ============================================
-# In-memory candle storage for BOOM1000 chart
+# In-memory storage for chart data
 # ALL timeframes pre-loaded at bot startup
 # ============================================
 accu_candle_data = []  # List of {time, open, high, low, close} — 1m candles (live)
 MAX_CANDLES = 500
+
+# Tick-level data for tick chart (each tick = ~1 second for Vol100)
+accu_tick_data = []  # List of {time, value} — raw ticks
+MAX_TICKS = 500
 
 # Pre-loaded cache for all timeframes {granularity: list of candles}
 _candle_cache = {}
@@ -142,14 +147,33 @@ def set_candle_cache(granularity: int, candles: list):
     _candle_cache[granularity] = candles
 
 
+def push_accu_tick(tick: dict):
+    """Add a tick to storage (called by bot on each tick)"""
+    global accu_tick_data
+    accu_tick_data.append(tick)
+    if len(accu_tick_data) > MAX_TICKS:
+        accu_tick_data.pop(0)
+
+
 @router.get("/accu/candles")
 async def get_accu_candles(
-    granularity: int = Query(60, description="Candle granularity in seconds: 60, 300, 3600, 86400")
+    granularity: int = Query(60, description="Candle granularity: 1 (ticks), 60, 300, 3600, 86400")
 ):
     """
-    Get BOOM1000 candle data for charting.
-    All timeframes served from memory (pre-loaded at bot startup).
+    Get chart data for the ACCU bot.
+    granularity=1: tick-by-tick data (~1s each)
+    granularity=60+: candle data
     """
+    # Tick chart: return raw ticks as OHLC (open=high=low=close=value)
+    if granularity == 1:
+        return [{
+            "time": t["time"],
+            "open": t["value"],
+            "high": t["value"],
+            "low": t["value"],
+            "close": t["value"],
+        } for t in accu_tick_data]
+
     # Validate granularity
     valid_granularities = {60, 300, 3600, 86400}
     if granularity not in valid_granularities:

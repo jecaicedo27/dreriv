@@ -220,9 +220,19 @@ class Layer2GroqEngine:
 - Confidence: {layer1.get('final_confidence', 0):.2f}
 - Reason: {layer1.get('reasoning', 'N/A')}
 
+**Direction Alignment (pre-computed):**
+- Price Direction (last 5 candles): {layer1.get('price_direction', 'UNKNOWN')}
+- Direction Aligned with L1 Signal: {layer1.get('direction_aligned', 'UNKNOWN')}
+- Last 5 Closes: {layer1.get('last_5_closes', [])}
+- RSI Extreme: {layer1.get('rsi_extreme', False)}
+
 ---
 
-**YOUR TASK**: Analyze the above data using your 7-step reasoning process. Output your decision as JSON with full reasoning_chain."""
+**YOUR TASK**: Analyze the above data using your 7-step reasoning process. Use the Direction Alignment data to adjust confidence:
+- If Direction Aligned = True → maintain or boost L1 confidence (GREEN LIGHT)
+- If Direction Aligned = False → reduce confidence by 0.15
+- If RSI Extreme = True → reduce confidence by an additional 0.20
+Output your decision as JSON with full reasoning_chain."""
         
         return context.strip()
     

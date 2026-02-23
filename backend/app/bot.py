@@ -4,6 +4,7 @@ Orchestrates all services and executes trading strategy
 """
 import asyncio
 from datetime import datetime
+import pandas as pd
 from loguru import logger
 from sqlalchemy.orm import Session
 
@@ -34,7 +35,64 @@ class TradingBot:
         self.data_collector = DataCollector(self.db, self.symbol, self.timeframe_seconds)
         self.risk_manager = RiskManager(self.db)
         self.trade_executor = TradeExecutor(self.db)
-        self.signal_engine = Layer1SignalEngine()
+        
+        # Engine: read persisted choice from DB, fallback to config default
+        from app.analysis.engine_registry import get_engine, get_engine_config
+        try:
+            from sqlalchemy import text as sa_text
+            row = self.db.execute(sa_text("SELECT value FROM bot_settings WHERE key = 'engine_name'")).fetchone()
+            if row and row[0]:
+                settings.ENGINE_NAME = row[0]
+                logger.info(f"🔧 Engine restored from DB: {settings.ENGINE_NAME}")
+            else:
+                logger.info(f"🔧 No saved engine in DB, using default: {settings.ENGINE_NAME}")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not read engine from DB: {e}, using default: {settings.ENGINE_NAME}")
+        self.signal_engine = get_engine(settings.ENGINE_NAME)
+        self.engine_config = get_engine_config(settings.ENGINE_NAME)
+        self.engine_name = settings.ENGINE_NAME
+        logger.info(f"🔧 Live bot engine: {settings.ENGINE_NAME}")
+        
+        # Engine presets — driven entirely by the selected motor
+        self.hurst_min = self.engine_config.get('hurst_min', 0.6)
+        self.hurst_max = self.engine_config.get('hurst_max', 0.7)
+        self.blocked_hours = set(self.engine_config.get('blocked_hours', []))
+        self.min_confidence = self.engine_config.get('confidence_min', 0.60)
+        logger.info(f"📊 Hurst range: [{self.hurst_min}, {self.hurst_max}], confidence_min: {self.min_confidence}")
+        logger.info(f"🕐 Blocked hours (Col): {sorted(self.blocked_hours) if self.blocked_hours else 'ninguna'}")
+        
+        # Defensive filters — from engine config
+        df_cfg = self.engine_config.get('defensive', {})
+        self.enable_wr_monitor = df_cfg.get('enable_wr_monitor', True)
+        self.wr_check_interval = df_cfg.get('wr_check_interval', 15)
+        self.wr_pause_threshold = df_cfg.get('wr_pause_threshold', 0.45)
+        self.wr_stop_threshold = df_cfg.get('wr_stop_threshold', 0.40)
+        self.wr_pause_candles = df_cfg.get('wr_pause_candles', 30)
+        self.wr_min_trades_pause = df_cfg.get('wr_min_trades_pause', 20)
+        self.wr_min_trades_stop = df_cfg.get('wr_min_trades_stop', 30)
+        
+        self.enable_global_streak = df_cfg.get('enable_global_streak', True)
+        self.global_streak_limit = df_cfg.get('global_streak_limit', 5)
+        self.global_streak_pause = df_cfg.get('global_streak_pause', 60)
+        
+        self.dir_cooldown_losses = df_cfg.get('dir_cooldown_losses', 3)
+        self.dir_cooldown_candles = df_cfg.get('dir_cooldown_candles', 30)
+        
+        self.enable_atr_gate = df_cfg.get('enable_atr_gate', True)
+        self.atr_lookback = df_cfg.get('atr_lookback', 30)
+        self.atr_low_mult = df_cfg.get('atr_low_mult', 0.5)
+        self.atr_high_mult = df_cfg.get('atr_high_mult', 2.0)
+        
+        self.cooldown_candles = df_cfg.get('cooldown_candles', 3)
+        logger.info(f"🛡️ Defensive filters: WR monitor={self.enable_wr_monitor}, streak={self.enable_global_streak}, ATR={self.enable_atr_gate}")
+        
+        # Runtime state for defensive filters
+        self._trade_results = []  # list of 'WIN'/'LOSS'
+        self._consecutive_losses = 0
+        self._dir_losses = {'CALL': 0, 'PUT': 0}
+        self._pause_until_candle = 0
+        self._candle_count = 0
+        self._day_stopped = False
         
         # State
         self.is_running = False
@@ -204,8 +262,51 @@ class TradingBot:
             
             logger.success(f"✅ Trade {trade.id} closed: {outcome} {profit:+.2f} USD")
             
+            # ===== UPDATE DEFENSIVE FILTER STATE =====
+            self._update_defensive_state(outcome, trade.direction or trade.contract_type)
+            
         except Exception as e:
             logger.error(f"❌ Error processing contract update: {e}")
+
+    def _update_defensive_state(self, outcome: str, direction: str):
+        """Update defensive filter state after a trade result."""
+        self._trade_results.append(outcome)
+        
+        # --- Global streak tracking ---
+        if outcome == 'LOSS':
+            self._consecutive_losses += 1
+            # Direction-specific cooldown
+            if direction in self._dir_losses:
+                self._dir_losses[direction] += 1
+                if self._dir_losses[direction] >= self.dir_cooldown_losses:
+                    self._pause_until_candle = self._candle_count + self.dir_cooldown_candles
+                    logger.warning(f"🔴 {self.dir_cooldown_losses} losses in {direction} → pausing {self.dir_cooldown_candles} candles")
+                    self._dir_losses[direction] = 0
+        else:
+            self._consecutive_losses = 0
+            # Reset dir losses on win
+            if direction in self._dir_losses:
+                self._dir_losses[direction] = max(0, self._dir_losses[direction] - 1)
+        
+        # --- Global streak protection ---
+        if self.enable_global_streak and self._consecutive_losses >= self.global_streak_limit:
+            self._pause_until_candle = self._candle_count + self.global_streak_pause
+            logger.warning(f"🔴 {self._consecutive_losses} consecutive losses → pausing {self.global_streak_pause} candles")
+            self._consecutive_losses = 0
+        
+        # --- WR monitor ---
+        if self.enable_wr_monitor:
+            total = len(self._trade_results)
+            if total > 0 and total % self.wr_check_interval == 0:
+                wins = sum(1 for r in self._trade_results if r == 'WIN')
+                wr = wins / total
+                
+                if total >= self.wr_min_trades_stop and wr < self.wr_stop_threshold:
+                    self._day_stopped = True
+                    logger.warning(f"🛑 WR {wr:.1%} after {total} trades < {self.wr_stop_threshold:.0%} → DAY STOPPED")
+                elif total >= self.wr_min_trades_pause and wr < self.wr_pause_threshold:
+                    self._pause_until_candle = self._candle_count + self.wr_pause_candles
+                    logger.warning(f"⏸️ WR {wr:.1%} after {total} trades < {self.wr_pause_threshold:.0%} → pausing {self.wr_pause_candles} candles")
 
     async def _main_loop(self):
         """
@@ -232,9 +333,33 @@ class TradingBot:
     
     async def _analyze_and_trade(self):
         """
-        Perform analysis and execute trade if signal is strong
+        Perform analysis and execute trade if signal is strong.
+        Uses TradingCore — THE SINGLE BRAIN — same as simulations.
+        All filters are driven by the engine config.
         """
         try:
+            self._candle_count += 1
+            
+            # ===== FILTER: Day stopped (WR too low) =====
+            if self._day_stopped:
+                logger.debug("🛑 Day stopped by WR monitor")
+                return
+            
+            # ===== FILTER: Pause active (streak/cooldown) =====
+            if self._candle_count < self._pause_until_candle:
+                remaining = self._pause_until_candle - self._candle_count
+                logger.debug(f"⏸️ Paused ({remaining} candles remaining)")
+                return
+            
+            # ===== FILTER: Blocked hours (Colombia time) =====
+            if self.blocked_hours:
+                from datetime import timezone, timedelta
+                col_tz = timezone(timedelta(hours=-5))
+                col_hour = datetime.now(col_tz).hour
+                if col_hour in self.blocked_hours:
+                    logger.debug(f"🚫 Hour {col_hour:02d} blocked by engine {self.engine_name}")
+                    return
+            
             logger.info("🔍 Analyzing market...")
             
             # Get recent candles
@@ -244,6 +369,21 @@ class TradingBot:
                 logger.warning("⚠️ Not enough candle data yet")
                 return
             
+            # ===== FILTER: ATR volatility gate =====
+            if self.enable_atr_gate and len(df) >= self.atr_lookback:
+                try:
+                    atr_series = (df['high'] - df['low']).rolling(self.atr_lookback).mean()
+                    current_atr = atr_series.iloc[-1]
+                    avg_atr = atr_series.mean()
+                    if current_atr < avg_atr * self.atr_low_mult:
+                        logger.info(f"📉 ATR too low ({current_atr:.4f} < {avg_atr * self.atr_low_mult:.4f}) — skipping")
+                        return
+                    if current_atr > avg_atr * self.atr_high_mult:
+                        logger.info(f"📈 ATR too high ({current_atr:.4f} > {avg_atr * self.atr_high_mult:.4f}) — skipping")
+                        return
+                except Exception as e:
+                    logger.debug(f"ATR gate error: {e}")
+            
             # Resolve pending decision comparisons
             try:
                 from app.services.decision_tracker import resolve_pending
@@ -251,125 +391,159 @@ class TradingBot:
             except Exception as e:
                 logger.debug(f"Decision resolver: {e}")
             
-            # Run Layer 1 analysis
-            signal = self.signal_engine.analyze(df, self.symbol)
+            # ===== THE SINGLE BRAIN — TradingCore =====
+            from app.simulation.trading_core import TradingCore
+            result = await TradingCore.analyze_async(
+                engine=self.signal_engine,
+                df=df,
+                symbol=self.symbol,
+                use_groq=settings.USE_GROQ_LAYER2,
+                ai_provider='groq',
+                hurst_min=self.hurst_min,
+                hurst_max=self.hurst_max,
+            )
             
-            logger.info(f"📊 Layer 1 Signal: {signal['final_signal']} (confidence: {signal['final_confidence']:.2%})")
-            logger.info(f"💡 Reasoning: {signal['reasoning']}")
+            final_decision = result["action"]
+            final_confidence = result["confidence"]
+            l1_signal = result["l1_signal"]
             
-            # Layer 2: Groq AI meta-analysis (if enabled)
-            # ARCHITECTURE: Groq is the FINAL decision maker
-            # It receives ALL L1 technical data and makes its own decision
-            # L1 filters (RSI, momentum, etc.) inform Groq but don't block it
+            logger.info(f"📊 L1: {l1_signal} ({result['l1_confidence']:.2%}) → Final: {final_decision} ({final_confidence:.2%})")
+            if result["groq_used"]:
+                logger.success(f"🧠 AI ({result['ai_provider']}): {result['reasoning'][:150]}")
             
-            l1_signal = signal.get('final_signal', 'HOLD')
-            hurst_regime = signal.get('hurst_signal', {}).get('regime', 'UNKNOWN')
-            hurst_value = signal.get('hurst_signal', {}).get('hurst', 0.5)
-            
-            # Call Groq ONLY when L1 has a directional signal
-            # L1 is the gatekeeper — if L1 says HOLD, we HOLD
-            should_call_groq = l1_signal in ['CALL', 'PUT']
-            
-            if settings.USE_GROQ_LAYER2:
-                if should_call_groq:
-                    try:
-                        from app.analysis.layer2_groq import get_layer2_engine
-                        layer2 = get_layer2_engine()
-                        
-                        # Get candles for context (30 for better trend visibility)
-                        candles = self.db.query(Candle).order_by(Candle.open_time.desc()).limit(30).all()
-                        candles.reverse()
-                        
-                        logger.info(f"🚀 Triggering Groq Analysis (L1: {l1_signal}, Hurst: {hurst_value:.3f}, Regime: {hurst_regime})")
-                        
-                        # Run Layer 2 analysis — Groq sees ALL L1 data and decides
-                        signal = await layer2.analyze(
-                            layer1_signal=signal,
-                            candles=candles,
-                            db=self.db
-                        )
-                        
-                        logger.success(
-                            f"🧠 Layer 2 (Groq) Final: {signal['decision']} "
-                            f"(confidence: {signal['confidence']:.2%})"
-                        )
-                    except Exception as e:
-                        logger.error(f"❌ Layer 2 error, falling back to Layer 1: {e}")
-                        # signal remains unchanged (Layer 1 only)
-                    
-                    # --- Save L1 vs Groq decision for comparison ---
-                    try:
-                        from app.services.decision_tracker import save_decision
-                        groq_decision_signal = signal.get('decision', signal.get('final_signal', 'HOLD'))
-                        groq_decision_conf = signal.get('confidence', signal.get('final_confidence', 0))
-                        save_decision(
-                            db=self.db,
-                            entry_price=signal.get('current_price', 0),
-                            l1_signal=l1_signal,
-                            l1_confidence=signal.get('layer1_confidence', signal.get('final_confidence', 0)),
-                            groq_signal=groq_decision_signal,
-                            groq_confidence=groq_decision_conf,
-                            duration=signal.get('duration', 300)
-                        )
-                    except Exception as e:
-                        logger.error(f"❌ Failed to track decision: {e}")
-                    
-                else:
-                    logger.info(f"💤 Market not trending (Hurst={hurst_value:.3f}) — Skipping Groq")
-                    # No connection made to Groq API
-
-            
-            # Execute trade if signal is strong enough
-            final_decision = signal.get('decision', signal.get('final_signal'))
-            final_confidence = signal.get('confidence', signal.get('final_confidence', 0))
+            # --- Save L1 vs AI decision for comparison ---
+            if result["groq_used"]:
+                try:
+                    from app.services.decision_tracker import save_decision
+                    save_decision(
+                        db=self.db,
+                        entry_price=result["entry_price"],
+                        l1_signal=l1_signal,
+                        l1_confidence=result["l1_confidence"],
+                        groq_signal=final_decision,
+                        groq_confidence=final_confidence,
+                        duration=300
+                    )
+                except Exception as e:
+                    logger.error(f"❌ Failed to track decision: {e}")
 
             # --- SAVE ANALYSIS HISTORY FOR CHART ---
             try:
                 from app.models.models import AnalysisHistory
+                from app.analysis.hurst import HurstExponent
                 
-                # Extract metrics safely (handle both L1 and L2 structures)
-                hurst_sig = signal.get('hurst_signal', {})
-                ou_sig = signal.get('ou_signal', {})
+                # Compute HYBRID Hurst (fast VR + slow R/S)
+                real_hurst = 0.5
+                real_hurst_fast = 0.5
+                real_regime = None
+                try:
+                    hurst_hybrid = HurstExponent.get_hybrid_signal(df['close'], fast_window=50, slow_window=200)
+                    real_hurst = hurst_hybrid.get('hurst_slow', 0.5)
+                    real_hurst_fast = hurst_hybrid.get('hurst_fast', 0.5)
+                    real_regime = hurst_hybrid.get('regime', 'RANDOM_WALK')
+                except Exception as he:
+                    logger.debug(f"Hurst calculation: {he}")
+                
+                # Compute REAL O-U deviation using the model
+                ou_dev = 0.0
+                try:
+                    from app.analysis.ornstein_uhlenbeck import OrnsteinUhlenbeckModel
+                    ou_model = OrnsteinUhlenbeckModel(window=200)
+                    if ou_model.fit(df['close']):
+                        ou_dev = ou_model.get_deviation(float(df['close'].iloc[-1]))
+                except Exception as oue:
+                    logger.debug(f"O-U deviation calc: {oue}")
+                latest_row = df.iloc[-1]
+                rsi_val = float(latest_row.get('rsi_14', 0)) if 'rsi_14' in df.columns else None
+                ema9_val = float(latest_row.get('ema_9', 0)) if 'ema_9' in df.columns else None
+                ema21_val = float(latest_row.get('ema_21', 0)) if 'ema_21' in df.columns else None
                 
                 history_entry = AnalysisHistory(
-                    timestamp=datetime.utcnow(), # Use UTC to match DB convention
+                    timestamp=datetime.utcnow(),
                     symbol=self.symbol,
-                    hurst_value=hurst_sig.get('hurst'),
-                    hurst_regime=hurst_sig.get('regime'),
-                    ou_signal=ou_sig.get('signal'),
-                    ou_deviation=ou_sig.get('deviation'),
-                    ou_confidence=ou_sig.get('confidence'),
+                    hurst_value=real_hurst,
+                    hurst_regime=real_regime,
+                    ou_deviation=ou_dev,
+                    ou_signal=result.get("l1_signal", "HOLD"),
                     final_signal=final_decision,
                     final_confidence=final_confidence,
-                    current_price=signal.get('current_price'),
-                    duration=signal.get('duration', 300)
+                    current_price=result["entry_price"],
+                    duration=300,
+                    rsi_14=rsi_val,
+                    ema_9=ema9_val,
+                    ema_21=ema21_val,
                 )
                 self.db.add(history_entry)
                 self.db.commit()
+                
+                # --- UPDATE LIVE CANDLE IN 'candles' TABLE ---
+                # This ensures the Dashboard Chart (which reads 'candles') matches the Bot logic
+                try:
+                    # Update the latest candle with bot's analysis values
+                    # (DataCollector handles per-candle Hurst; this is a safety net)
+                    last_ts = df.index[-1] if isinstance(df.index, pd.DatetimeIndex) else df.iloc[-1]['open_time']
+                    from sqlalchemy import text
+                    self.db.execute(text("""
+                        UPDATE candles 
+                        SET hurst_exponent = :hurst,
+                            hurst_fast = :hurst_fast,
+                            ou_deviation = :ou_dev,
+                            regime = :regime,
+                            garch_volatility_forecast = :garch
+                        WHERE symbol = :symbol 
+                          AND open_time = :open_time
+                    """), {
+                        "hurst": float(real_hurst),
+                        "hurst_fast": float(real_hurst_fast),
+                        "ou_dev": float(ou_dev),
+                        "regime": real_regime or 'RANDOM_WALK',
+                        "garch": 0.0,
+                        "symbol": self.symbol,
+                        "open_time": last_ts
+                    })
+                    self.db.commit()
+                    # logger.debug(f"✅ Updated candle indicators for {last_ts}")
+                except Exception as ce:
+                    logger.error(f"❌ Failed to update candle indicators: {ce}")
+                    
             except Exception as e:
                 logger.error(f"⚠️ Failed to save AnalysisHistory: {e}")
-            # ---------------------------------------
             
             if final_decision in ['CALL', 'PUT']:
-                # Minimum confidence threshold
-                if final_confidence >= 0.60:
+                if final_confidence >= self.min_confidence:
                     
                     # Get current balance
                     self.risk_manager.refresh_state()
                     balance = float(self.risk_manager.bot_state.balance)
                     
+                    # Build signal dict for trade executor (it expects specific keys)
+                    trade_signal = {
+                        'symbol': self.symbol,
+                        'contract_type': final_decision,  # CALL or PUT
+                        'decision': final_decision,
+                        'final_signal': final_decision,
+                        'confidence': final_confidence,
+                        'final_confidence': final_confidence,
+                        'current_price': result['entry_price'],
+                        'suggested_stake_multiplier': 1.0,
+                        'duration': 300,
+                        'reasoning': result['reasoning'],
+                        'hurst_signal': {'hurst': real_hurst},
+                        'engine_name': settings.ENGINE_NAME,
+                    }
+                    
                     # Execute trade
-                    trade = await self.trade_executor.execute_trade(signal, balance)
+                    trade = await self.trade_executor.execute_trade(trade_signal, balance)
                     
                     if trade:
                         logger.success(f"✅ Trade executed: {trade.id}")
+                        # Apply cooldown after trade
+                        self._pause_until_candle = self._candle_count + self.cooldown_candles
                     else:
                         logger.warning("⚠️ Trade execution blocked by risk management")
                 else:
                     logger.info(f"📉 Confidence too low ({final_confidence:.2%} < 60%)")
             else:
-                logger.info("⏸️ No trading signal - HOLD")
-                
                 logger.info("⏸️ No trading signal - HOLD")
                 
         except Exception as e:

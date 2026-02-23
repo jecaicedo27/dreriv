@@ -26,7 +26,7 @@ from app.core.config import get_settings
 from app.services.deriv_client import DerivWebSocketClient
 from app.services.telegram_notifier import telegram_notifier
 from app.analysis.accu_analysis import AccuAnalysisEngine
-from app.api.accu_status import update_accu_state, accu_bot_state, log_accu_trade, push_accu_candle, set_candle_cache
+from app.api.accu_status import update_accu_state, accu_bot_state, log_accu_trade, push_accu_candle, set_candle_cache, push_accu_tick
 from app.services.accu_db import save_accu_trade
 
 settings = get_settings()
@@ -68,6 +68,10 @@ class AccumulatorBot:
         self.cooldown_until = None
         self.total_trades = 0
         self.total_wins = 0
+
+        # Entry lock to prevent concurrent buy attempts
+        self._entry_lock = asyncio.Lock()
+        self._is_entering = False
         self.total_losses = 0
         self.session_pnl = 0.0
 
@@ -100,6 +104,28 @@ class AccumulatorBot:
         self.ws_client.set_tick_callback(self._on_tick)
         self.ws_client.set_balance_callback(self._on_balance_update)
         self.ws_client.set_contract_callback(self._on_contract_update)
+
+        # Check for existing open ACCU contracts (orphan detection)
+        try:
+            portfolio = await self.ws_client.get_portfolio()
+            accu_contracts = [c for c in portfolio if c.get('contract_type') == 'ACCU' 
+                             and c.get('symbol') == self.config.SYMBOL]
+            if accu_contracts:
+                orphan = accu_contracts[0]
+                self.open_contract_id = orphan.get('contract_id')
+                self.open_contract_buy_price = float(orphan.get('buy_price', 0))
+                self.open_contract_start_time = datetime.now()
+                logger.warning(f"{prefix} 🔍 Found orphan ACCU contract: {self.open_contract_id} — adopting it")
+                # Subscribe to updates for this contract
+                await self.ws_client.send_request({
+                    "proposal_open_contract": 1,
+                    "contract_id": self.open_contract_id,
+                    "subscribe": 1
+                })
+            else:
+                logger.info(f"{prefix} ✅ No orphan ACCU contracts found")
+        except Exception as e:
+            logger.warning(f"{prefix} ⚠️ Portfolio check failed: {e}")
 
         # Subscribe to balance
         await self.ws_client.subscribe_balance()
@@ -203,11 +229,15 @@ class AccumulatorBot:
         """Process each incoming tick"""
         try:
             price = float(tick_data.get('quote', 0))
+            epoch = int(tick_data.get('epoch', 0))
             symbol = tick_data.get('symbol', '')
 
             # Only process our symbol
             if symbol != self.config.SYMBOL:
                 return
+
+            # Push tick to chart storage
+            push_accu_tick({"time": epoch, "value": price})
 
             # Run analysis
             analysis = self.analysis_engine.process_tick(price)
@@ -239,14 +269,26 @@ class AccumulatorBot:
             accu_bot_state['volatility_score'] = analysis['metrics'].get('volatility_score', 0)
 
             # Check for entry signal
-            if analysis['signal'] == 'ENTER':
+            if analysis['signal'] == 'ENTER' and not self._is_entering:
                 await self._execute_entry(analysis)
 
         except Exception as e:
             logger.error(f"{self.config.LOG_PREFIX} ❌ Tick processing error: {e}")
 
     async def _execute_entry(self, analysis: dict):
-        """Execute an ACCU contract purchase"""
+        """Execute an ACCU contract purchase (with lock to prevent race conditions)"""
+        if self._entry_lock.locked():
+            return  # Another entry attempt is already in progress
+
+        async with self._entry_lock:
+            self._is_entering = True
+            try:
+                await self._do_entry(analysis)
+            finally:
+                self._is_entering = False
+
+    async def _do_entry(self, analysis: dict):
+        """Actually execute the entry (called under lock)"""
         prefix = self.config.LOG_PREFIX
 
         # Safety: don't enter if we already have an open contract
@@ -263,13 +305,48 @@ class AccumulatorBot:
             f"Growth: {growth_rate*100}%"
         )
 
-        # Buy accumulator
-        contract = await self.ws_client.buy_accumulator(
-            symbol=self.config.SYMBOL,
-            amount=self.config.STAKE,
-            growth_rate=growth_rate,
-            take_profit=self.config.TAKE_PROFIT
-        )
+        # Buy accumulator (with reconnect retry)
+        contract = None
+        for attempt in range(3):
+            contract = await self.ws_client.buy_accumulator(
+                symbol=self.config.SYMBOL,
+                amount=self.config.STAKE,
+                growth_rate=growth_rate,
+                take_profit=self.config.TAKE_PROFIT
+            )
+            if contract:
+                break
+
+            # Failed — try reconnect
+            logger.warning(f"{prefix} ⚡ Buy attempt {attempt+1}/3 failed, reconnecting...")
+            try:
+                # Close existing connection
+                if self.ws_client.ws:
+                    try:
+                        await self.ws_client.ws.close()
+                    except Exception:
+                        pass
+                self.ws_client.is_connected = False
+                self.ws_client.running = False
+                await asyncio.sleep(2)
+                if not await self.ws_client.connect():
+                    logger.error(f"{prefix} ❌ Reconnect failed")
+                    continue
+                self.ws_client.running = True
+                asyncio.create_task(self.ws_client.message_handler_loop())
+                auth = await self.ws_client.authorize(api_token=self.accu_api_token)
+                if not auth:
+                    logger.error(f"{prefix} ❌ Re-auth failed")
+                    continue
+                self.balance = float(auth.get('balance', 0))
+                # Re-subscribe ticks
+                self.ws_client.set_tick_callback(self._on_tick)
+                self.ws_client.set_contract_callback(self._on_contract_update)
+                await self.ws_client.subscribe_to_ticks(self.config.SYMBOL)
+                logger.info(f"{prefix} ✅ Reconnected, retrying buy...")
+                await asyncio.sleep(1)
+            except Exception as re_err:
+                logger.error(f"{prefix} ❌ Reconnect error: {re_err}")
 
         if contract:
             self.open_contract_id = contract.get('contract_id')
@@ -296,7 +373,7 @@ class AccumulatorBot:
                 f"#{self.total_trades}"
             )
         else:
-            logger.error(f"{prefix} ❌ Failed to open ACCU contract")
+            logger.error(f"{prefix} ❌ Failed to open ACCU contract after 3 attempts")
 
     async def _on_contract_update(self, contract_data: dict):
         """Handle contract updates (profit, barriers, close)"""

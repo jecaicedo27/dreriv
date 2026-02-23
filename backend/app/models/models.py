@@ -43,7 +43,11 @@ class Candle(Base):
     ema_21 = Column(Numeric(18, 8))
     ema_50 = Column(Numeric(18, 8))
     rsi_14 = Column(Numeric(8, 4))
+    stoch_rsi = Column(Numeric(8, 4))
     atr_14 = Column(Numeric(18, 8))
+    adx_14 = Column(Numeric(8, 4))
+    plus_di = Column(Numeric(8, 4))
+    minus_di = Column(Numeric(8, 4))
     bollinger_upper = Column(Numeric(18, 8))
     bollinger_middle = Column(Numeric(18, 8))
     bollinger_lower = Column(Numeric(18, 8))
@@ -70,6 +74,7 @@ class Candle(Base):
     
     # Statistical Analysis
     hurst_exponent = Column(Numeric(8, 6))
+    hurst_fast = Column(Numeric(8, 6))  # Variance Ratio fast Hurst
     ou_deviation = Column(Numeric(12, 8))
     garch_volatility_forecast = Column(Numeric(12, 8))
     regime = Column(String(30))
@@ -118,6 +123,9 @@ class Trade(Base):
     
     # Deriv contract reference
     deriv_contract_id = Column(String(50))
+    
+    # Engine that produced this trade
+    engine_name = Column(String(50))
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

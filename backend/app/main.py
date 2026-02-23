@@ -41,13 +41,13 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(bot.start())
     
     # Initialize Accumulator bot (shares memory with API)
-    from app.accu_bot import AccumulatorBot
-    accu_bot = AccumulatorBot()
-    app.state.accu_bot = accu_bot
+    # from app.accu_bot import AccumulatorBot
+    # accu_bot = AccumulatorBot()
+    # app.state.accu_bot = accu_bot
     
     # Start ACCU bot in background
-    logger.info("🎰 Spawning Accumulator bot background task...")
-    asyncio.create_task(accu_bot.start())
+    # logger.info("🎰 Spawning Accumulator bot background task...")
+    # asyncio.create_task(accu_bot.start())
     
     logger.success("✅ Application started successfully")
     

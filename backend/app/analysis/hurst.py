@@ -175,3 +175,136 @@ class HurstExponent:
         """
         H = HurstExponent.calculate(prices, window)
         return HurstExponent.interpret(H)
+    
+    @staticmethod
+    def calculate_fast(prices: pd.Series, window: int = 50) -> float:
+        """
+        Fast Hurst estimator using Variance Ratio method.
+        
+        Much more responsive than R/S for short windows.
+        VR(q) = Var(q-period returns) / (q * Var(1-period returns))
+        If VR > 1 → trending (H > 0.5), VR < 1 → mean-reverting (H < 0.5)
+        
+        We convert VR to a Hurst-like scale [0, 1] for compatibility.
+        
+        Args:
+            prices: Series of prices
+            window: Window size (default 50 = ~50 minutes)
+            
+        Returns:
+            Hurst-like value (0 to 1)
+        """
+        if len(prices) < window:
+            return 0.5
+        
+        try:
+            prices_arr = prices.tail(window).values.astype(float)
+            
+            # Log returns
+            log_ret = np.diff(np.log(prices_arr))
+            
+            if len(log_ret) < 10:
+                return 0.5
+            
+            # Variance of 1-period returns
+            var_1 = np.var(log_ret, ddof=1)
+            if var_1 < 1e-20:
+                return 0.5
+            
+            # Test multiple aggregation periods for robustness
+            hurst_estimates = []
+            for q in [2, 4, 8, 16]:
+                if q >= len(log_ret):
+                    continue
+                
+                # q-period returns (non-overlapping)
+                n_blocks = len(log_ret) // q
+                if n_blocks < 2:
+                    continue
+                
+                q_rets = np.array([
+                    np.sum(log_ret[i*q:(i+1)*q]) 
+                    for i in range(n_blocks)
+                ])
+                var_q = np.var(q_rets, ddof=1)
+                
+                # Variance ratio
+                vr = var_q / (q * var_1)
+                
+                # Convert VR to Hurst: VR = q^(2H-1) → H = (log(VR)/log(q) + 1) / 2
+                if vr > 0:
+                    h_est = (np.log(vr) / np.log(q) + 1) / 2
+                    h_est = max(0.0, min(1.0, h_est))
+                    hurst_estimates.append(h_est)
+            
+            if not hurst_estimates:
+                return 0.5
+            
+            # Weighted average (higher q gets more weight for stability)
+            H_fast = np.mean(hurst_estimates)
+            H_fast = max(0.0, min(1.0, H_fast))
+            
+            logger.debug(f"Hurst FAST (VR): {H_fast:.4f} (from {len(hurst_estimates)} estimates)")
+            return H_fast
+            
+        except Exception as e:
+            logger.error(f"❌ Hurst VR calculation error: {e}")
+            return 0.5
+    
+    @staticmethod
+    def get_hybrid_signal(prices: pd.Series, fast_window: int = 50, slow_window: int = 200) -> Dict[str, Any]:
+        """
+        Combined signal from Fast (Variance Ratio) + Slow (R/S) Hurst.
+        
+        Regime matrix:
+          Fast > 0.55 AND Slow > 0.50 → TRENDING_CONFIRMED (high confidence)
+          Fast > 0.55 AND Slow < 0.50 → TRENDING_EMERGING (medium confidence)
+          Fast < 0.45 AND Slow < 0.50 → MEAN_REVERSION_CONFIRMED (high confidence)  
+          Fast < 0.45 AND Slow > 0.50 → TRANSITIONING (low confidence, wait)
+          Else                        → RANDOM_WALK (no edge)
+        """
+        H_fast = HurstExponent.calculate_fast(prices, window=fast_window)
+        H_slow = HurstExponent.calculate(prices, window=slow_window)
+        
+        # Determine combined regime
+        if H_fast > 0.55 and H_slow > 0.50:
+            regime = 'TRENDING_CONFIRMED'
+            signal = 'UNFAVORABLE'  # Mean reversion strategies not recommended
+            confidence = min((H_fast - 0.5) * 3 + (H_slow - 0.5) * 2, 0.95)
+            reason = f'Both fast ({H_fast:.3f}) and slow ({H_slow:.3f}) show trending'
+            trade_recommended = False
+        elif H_fast > 0.55 and H_slow <= 0.50:
+            regime = 'TRENDING_EMERGING'
+            signal = 'CAUTION'
+            confidence = (H_fast - 0.5) * 2
+            reason = f'Fast trending ({H_fast:.3f}) but slow still neutral ({H_slow:.3f}) — trend emerging'
+            trade_recommended = False
+        elif H_fast < 0.45 and H_slow < 0.50:
+            regime = 'MEAN_REVERSION_CONFIRMED'
+            signal = 'FAVORABLE'
+            confidence = min((0.5 - H_fast) * 3 + (0.5 - H_slow) * 2, 0.95)
+            reason = f'Both fast ({H_fast:.3f}) and slow ({H_slow:.3f}) confirm mean reversion'
+            trade_recommended = True
+        elif H_fast < 0.45 and H_slow >= 0.50:
+            regime = 'TRANSITIONING'
+            signal = 'CAUTION'
+            confidence = (0.5 - H_fast) * 2
+            reason = f'Fast mean-reverting ({H_fast:.3f}) but slow still trending ({H_slow:.3f}) — transitioning'
+            trade_recommended = False
+        else:
+            regime = 'RANDOM_WALK'
+            signal = 'UNFAVORABLE'
+            confidence = 0.3
+            reason = f'No clear regime: fast={H_fast:.3f}, slow={H_slow:.3f}'
+            trade_recommended = False
+        
+        return {
+            'hurst': round(H_slow, 4),        # Backward compatible
+            'hurst_fast': round(H_fast, 4),
+            'hurst_slow': round(H_slow, 4),
+            'regime': regime,
+            'signal': signal,
+            'confidence': round(max(0, min(confidence, 0.95)), 4),
+            'reason': reason,
+            'trade_recommended': trade_recommended,
+        }

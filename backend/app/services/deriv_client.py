@@ -361,6 +361,17 @@ class DerivWebSocketClient:
             logger.error(f"❌ Sell error: {e}")
             return None
 
+    async def get_portfolio(self):
+        """Get all open contracts (portfolio)"""
+        try:
+            response = await self.send_request({"portfolio": 1, "contract_type": ["ACCU"]})
+            if "portfolio" in response:
+                return response["portfolio"].get("contracts", [])
+            return []
+        except Exception as e:
+            logger.error(f"❌ Portfolio error: {e}")
+            return []
+
     async def get_contract_status(self, contract_id: int):
         """
         Get current status of a contract
@@ -404,26 +415,93 @@ class DerivWebSocketClient:
 
     async def message_handler_loop(self):
         """
-        Main loop to handle ALL incoming messages
+        Main loop to handle ALL incoming messages.
+        IMPORTANT: This is the ONLY place that calls recv().
+        During reconnection, authorize() and subscribe_to_ticks() 
+        use send_request() which creates futures resolved by THIS loop's recv().
+        So we must NOT have two recv() calls active simultaneously.
         """
         while self.running:
             try:
                 if not self.is_connected or not self.ws:
-                    # Try to reconnect
-                    if not self.is_connected:
-                        logger.warning("🔄 Connection lost, attempting to reconnect...")
-                        if await self.connect():
-                            # Re-authenticate
-                            await self.authorize()
+                    # Reconnect
+                    logger.warning("🔄 Connection lost, attempting to reconnect...")
+                    if await self.connect():
+                        # Start recv() loop FIRST, then auth/subscribe will work
+                        # because send_request creates futures resolved by recv()
+                        # We use asyncio.ensure_future so they run in the SAME event loop
+                        # and recv() below will pick up their responses
+                        
+                        # Auth inline — send the raw request and handle response in recv() below
+                        token = settings.DERIV_API_TOKEN
+                        auth_req_id = self.req_id_counter
+                        self.req_id_counter += 1
+                        loop = asyncio.get_event_loop()
+                        auth_future = loop.create_future()
+                        self.pending_requests[auth_req_id] = auth_future
+                        await self.ws.send(json.dumps({
+                            "authorize": token,
+                            "req_id": auth_req_id
+                        }))
+                        
+                        # Now recv() the auth response
+                        try:
+                            auth_msg = await asyncio.wait_for(self.ws.recv(), timeout=10.0)
+                            auth_data = json.loads(auth_msg)
+                            auth_rid = auth_data.get('req_id')
+                            if auth_rid and auth_rid in self.pending_requests:
+                                f = self.pending_requests.pop(auth_rid)
+                                if not f.done():
+                                    f.set_result(auth_data)
                             
-                            # Re-subscribe to all previous subscriptions
-                            for symbol in list(self.active_subscriptions.keys()):
-                                await self.subscribe_to_ticks(symbol)
-                        else:
-                             await asyncio.sleep(5)
-                             continue
+                            if "authorize" in auth_data:
+                                self.is_authorized = True
+                                is_virtual = auth_data["authorize"].get("is_virtual")
+                                balance = auth_data["authorize"].get("balance", 0)
+                                acct = "DEMO" if is_virtual else "REAL"
+                                logger.success(f"✅ Reconnected & authorized - {acct} | Balance: {balance}")
+                            else:
+                                logger.error(f"❌ Re-auth failed: {auth_data}")
+                        except Exception as auth_err:
+                            logger.error(f"❌ Re-auth recv error: {auth_err}")
+                            self.is_connected = False
+                            await asyncio.sleep(3)
+                            continue
+                        
+                        # Re-subscribe to ticks (same inline pattern)
+                        for symbol in list(self.active_subscriptions.keys()):
+                            try:
+                                sub_req_id = self.req_id_counter
+                                self.req_id_counter += 1
+                                sub_future = loop.create_future()
+                                self.pending_requests[sub_req_id] = sub_future
+                                await self.ws.send(json.dumps({
+                                    "ticks": symbol,
+                                    "subscribe": 1,
+                                    "req_id": sub_req_id
+                                }))
+                                
+                                sub_msg = await asyncio.wait_for(self.ws.recv(), timeout=10.0)
+                                sub_data = json.loads(sub_msg)
+                                sub_rid = sub_data.get('req_id')
+                                if sub_rid and sub_rid in self.pending_requests:
+                                    f = self.pending_requests.pop(sub_rid)
+                                    if not f.done():
+                                        f.set_result(sub_data)
+                                
+                                if "subscription" in sub_data:
+                                    self.active_subscriptions[symbol] = sub_data["subscription"]["id"]
+                                    logger.success(f"✅ Re-subscribed to {symbol}")
+                            except Exception as sub_err:
+                                logger.error(f"❌ Re-subscribe {symbol} error: {sub_err}")
+                        
+                        logger.info("🔄 Reconnection complete, resuming message loop")
+                        continue
+                    else:
+                        await asyncio.sleep(5)
+                        continue
                 
-                # The ONLY place calling recv()
+                # The ONLY place calling recv() during normal operation
                 message = await self.ws.recv()
                 data = json.loads(message)
                 
@@ -433,8 +511,6 @@ class DerivWebSocketClient:
                     future = self.pending_requests.pop(req_id)
                     if not future.done():
                         future.set_result(data)
-                    # Don't return here! We might still want to process it (e.g. tick with req_id)
-                    # although usually req_id responses are just ack/result
                 
                 # 2. Handle data streams
                 if "tick" in data:
@@ -447,12 +523,10 @@ class DerivWebSocketClient:
                     await self.handle_balance(data["balance"])
                 
                 elif "proposal_open_contract" in data:
-                    # This is where trade updates come in if we subscribed
                     await self.handle_contract_update(data["proposal_open_contract"]) 
 
                 elif "error" in data:
                     logger.error(f"🚨 Deriv API Error: {data['error']}")
-                    # If this error has a req_id, the future was already resolved above with the error payload
                 
             except websockets.ConnectionClosed:
                 logger.warning("⚠️ WebSocket connection closed")
@@ -461,7 +535,14 @@ class DerivWebSocketClient:
                 
             except Exception as e:
                 logger.error(f"❌ Message handler error: {e}")
-                await asyncio.sleep(1)
+                self.is_connected = False
+                try:
+                    if self.ws:
+                        await self.ws.close()
+                except Exception:
+                    pass
+                self.ws = None
+                await asyncio.sleep(2)
 
     async def start(self):
         """
@@ -576,9 +657,6 @@ class DerivWebSocketClient:
         if self.candle_callback:
             await self.candle_callback(candle_data)
 
-
-# Global client instance
-deriv_client = DerivWebSocketClient()
 
 # Global client instance
 deriv_client = DerivWebSocketClient()

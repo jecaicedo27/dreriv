@@ -69,6 +69,7 @@ async def get_bot_status(db: Session = Depends(get_db)):
             "losses_today": bot_state.losses_today,
             "last_updated": bot_state.updated_at.isoformat() if bot_state.updated_at else None,
             "account_type": settings.DERIV_ACCOUNT_TYPE.upper(),
+            "engine_name": settings.ENGINE_NAME,
             "cooldown_until": bot_state.cooldown_until.isoformat() if bot_state.cooldown_until else None,
             "cooldown_reason": bot_state.cooldown_reason,
             
@@ -162,29 +163,125 @@ async def reset_risk_state(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Error resetting risk state: {str(e)}")
 
 
-@router.get("/candles")
-async def get_candles(limit: int = 200, db: Session = Depends(get_db)):
-    """
-    Get recent candles for charting
-    """
+@router.get("/engine")
+async def get_engine_info():
+    """Get current engine and available engines"""
+    from app.analysis.engine_registry import _ENGINES
+    return {
+        "current": settings.ENGINE_NAME,
+        "available": list(_ENGINES.keys())
+    }
+
+
+@router.post("/engine/{engine_name}")
+async def switch_engine(engine_name: str, db: Session = Depends(get_db)):
+    """Switch the live bot's engine at runtime and persist to DB"""
+    from app.analysis.engine_registry import _ENGINES, get_engine
+    from sqlalchemy import text
+    
+    if engine_name not in _ENGINES:
+        raise HTTPException(status_code=400, detail=f"Unknown engine: {engine_name}. Available: {list(_ENGINES.keys())}")
+    
+    # Update in memory
+    settings.ENGINE_NAME = engine_name
+    
+    # Persist to DB
+    db.execute(text("""
+        INSERT INTO bot_settings (key, value, updated_at) 
+        VALUES ('engine_name', :engine, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = :engine, updated_at = NOW()
+    """), {"engine": engine_name})
+    db.commit()
+    
+    return {
+        "status": "ok",
+        "engine": engine_name,
+        "message": f"Engine switched to {engine_name}. Saved to DB."
+    }
+
+@router.get("/engine")
+async def get_current_engine(db: Session = Depends(get_db)):
+    """Get the currently saved engine name"""
+    from sqlalchemy import text
+    row = db.execute(text("SELECT value FROM bot_settings WHERE key = 'engine_name'")).fetchone()
+    engine_name = row[0] if row else settings.ENGINE_NAME
+    return {"engine": engine_name}
+
+@router.get("/candles-with-indicators")
+async def get_candles_with_indicators(start_date: str = None, end_date: str = None, db: Session = Depends(get_db)):
+    """Get candles with EMA/BB/RSI indicators for chart overlays."""
     try:
-        # Get latest candles (descending order)
-        candles = db.query(Candle).order_by(Candle.open_time.desc()).limit(limit).all()
-        
-        # Reverse to chronological order for chart
-        candles.reverse()
-        
+        from sqlalchemy import text
+        if not start_date or not end_date:
+            return []
+        rows = db.execute(text("""
+            SELECT open_time, close,
+                   ema_21, ema_50, bollinger_upper, bollinger_lower, rsi_14
+            FROM candles
+            WHERE symbol = 'R_100'
+              AND open_time >= CAST(:start_date AS timestamp)
+              AND open_time < (CAST(:end_date AS timestamp) + interval '1 day')
+            ORDER BY open_time ASC
+        """), {"start_date": start_date, "end_date": end_date}).fetchall()
         return [
             {
-                "time": int(candle.open_time.timestamp()),
-                "open": float(candle.open),
-                "high": float(candle.high),
-                "low": float(candle.low),
-                "close": float(candle.close),
-                "volume": int(candle.volume) if candle.volume else 0
+                "time": int(r.open_time.timestamp()),
+                "ema_21": float(r.ema_21) if r.ema_21 else None,
+                "ema_50": float(r.ema_50) if r.ema_50 else None,
+                "bollinger_upper": float(r.bollinger_upper) if r.bollinger_upper else None,
+                "bollinger_lower": float(r.bollinger_lower) if r.bollinger_lower else None,
+                "rsi_14": float(r.rsi_14) if r.rsi_14 else None,
             }
-            for candle in candles
+            for r in rows
         ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@router.get("/candles")
+async def get_candles(limit: int = 200, start_date: str = None, end_date: str = None, db: Session = Depends(get_db)):
+    """
+    Get candles for charting. Supports date range filtering.
+    start_date/end_date format: YYYY-MM-DD
+    """
+    try:
+        from sqlalchemy import text
+        
+        if start_date and end_date:
+            # Date range mode
+            candles_rows = db.execute(text("""
+                SELECT open_time, open, high, low, close, volume
+                FROM candles
+                WHERE symbol = 'R_100'
+                  AND open_time >= CAST(:start_date AS timestamp)
+                  AND open_time < (CAST(:end_date AS timestamp) + interval '1 day')
+                ORDER BY open_time ASC
+            """), {"start_date": start_date, "end_date": end_date}).fetchall()
+            return [
+                {
+                    "time": int(r.open_time.timestamp()),
+                    "open": float(r.open),
+                    "high": float(r.high),
+                    "low": float(r.low),
+                    "close": float(r.close),
+                    "volume": int(r.volume) if r.volume else 0
+                }
+                for r in candles_rows
+            ]
+        else:
+            # Default: latest N candles
+            candles = db.query(Candle).order_by(Candle.open_time.desc()).limit(limit).all()
+            candles.reverse()
+            return [
+                {
+                    "time": int(candle.open_time.timestamp()),
+                    "open": float(candle.open),
+                    "high": float(candle.high),
+                    "low": float(candle.low),
+                    "close": float(candle.close),
+                    "volume": int(candle.volume) if candle.volume else 0
+                }
+                for candle in candles
+            ]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching candles: {str(e)}")
 
@@ -227,31 +324,82 @@ async def get_historical_candles(limit: int = 500, db: Session = Depends(get_db)
 
 
 @router.get("/analysis-history")
-async def get_analysis_history(limit: int = 300, db: Session = Depends(get_db)):
+async def get_analysis_history(limit: int = 300, start_date: str = None, end_date: str = None, db: Session = Depends(get_db)):
     """
-    Get historical analysis data for chart indicators overlay
-    Returns last N analysis records for visualization
+    Get historical analysis data for chart indicators overlay.
+    Hurst/OU from candles (per-minute, smooth), signals from AnalysisHistory.
+    Uses forward-fill so NULL candles inherit the last known Hurst value.
+    Supports date range filtering via start_date/end_date (YYYY-MM-DD).
     """
     try:
-        from app.models.models import AnalysisHistory
+        from sqlalchemy import text
         
-        records = db.query(AnalysisHistory)\
-            .order_by(AnalysisHistory.timestamp.desc())\
-            .limit(limit)\
-            .all()
+        if start_date and end_date:
+            # Date range mode
+            rows = db.execute(text("""
+                SELECT 
+                    c.open_time, c.close, 
+                    c.hurst_exponent, c.hurst_fast, c.regime, c.ou_deviation,
+                    a.ou_signal, a.final_signal, a.final_confidence, a.duration
+                FROM candles c
+                LEFT JOIN analysis_history a 
+                    ON a.timestamp >= c.open_time 
+                    AND a.timestamp < c.open_time + interval '1 minute'
+                WHERE c.symbol = 'R_100'
+                  AND c.open_time >= CAST(:start_date AS timestamp)
+                  AND c.open_time < (CAST(:end_date AS timestamp) + interval '1 day')
+                ORDER BY c.open_time ASC
+            """), {"start_date": start_date, "end_date": end_date}).fetchall()
+        else:
+            # Default: latest N candles
+            rows = db.execute(text("""
+                SELECT 
+                    c.open_time, c.close, 
+                    c.hurst_exponent, c.hurst_fast, c.regime, c.ou_deviation,
+                    a.ou_signal, a.final_signal, a.final_confidence, a.duration
+                FROM candles c
+                LEFT JOIN analysis_history a 
+                    ON a.timestamp >= c.open_time 
+                    AND a.timestamp < c.open_time + interval '1 minute'
+                WHERE c.symbol = 'R_100'
+                ORDER BY c.open_time DESC
+                LIMIT :limit
+            """), {"limit": limit}).fetchall()
         
-        # Reverse to chronological order and format for chart
-        return [{
-            "time": int(r.timestamp.timestamp()),
-            "hurst": float(r.hurst_value) if r.hurst_value else 0.5,
-            "hurst_regime": r.hurst_regime,
-            "ou_deviation": float(r.ou_deviation) if r.ou_deviation else 0,
-            "ou_signal": r.ou_signal,
-            "signal": r.final_signal,
-            "confidence": float(r.final_confidence) if r.final_confidence else 0,
-            "duration": r.duration,
-            "price": float(r.current_price) if r.current_price else 0
-        } for r in reversed(records)]
+        # Forward-fill: carry last known values through NULL gaps
+        # For date range mode, rows are already ASC. For default mode, rows are DESC.
+        result = []
+        last_hurst = 0.5
+        last_hurst_fast = 0.5
+        last_regime = "UNKNOWN"
+        last_ou = 0.0
+        
+        # Determine iteration order: default mode is DESC so reverse it; date range is already ASC
+        ordered_rows = reversed(rows) if not (start_date and end_date) else rows
+        
+        for r in ordered_rows:
+            if r.hurst_exponent is not None:
+                last_hurst = round(float(r.hurst_exponent), 4)
+                last_regime = r.regime or "UNKNOWN"
+            if r.hurst_fast is not None:
+                last_hurst_fast = round(float(r.hurst_fast), 4)
+            if r.ou_deviation is not None:
+                last_ou = round(float(r.ou_deviation), 2)
+            
+            result.append({
+                "time": int(r.open_time.timestamp()),
+                "hurst": last_hurst,
+                "hurst_fast": last_hurst_fast,
+                "hurst_regime": last_regime,
+                "ou_deviation": last_ou,
+                "ou_signal": r.ou_signal or "HOLD",
+                "signal": r.final_signal or "HOLD",
+                "confidence": float(r.final_confidence) if r.final_confidence else 0,
+                "duration": r.duration or 60,
+                "price": float(r.close) if r.close else 0
+            })
+        
+        return result
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching analysis history: {str(e)}")
@@ -283,7 +431,8 @@ async def get_recent_trades(limit: int = 20, db: Session = Depends(get_db)):
                 "confidence": float(trade.final_confidence) if trade.final_confidence is not None else 0.0,
                 "pnl": float(trade.profit_loss) if trade.profit_loss is not None else 0.0,
                 "hurst": float(trade.hurst_at_entry) if trade.hurst_at_entry is not None else None,
-                "groq_used": bool(trade.layer3_groq_used) if trade.layer3_groq_used is not None else False
+                "groq_used": bool(trade.layer3_groq_used) if trade.layer3_groq_used is not None else False,
+                "engine_name": trade.engine_name or "—"
             }
             for trade in trades
         ]

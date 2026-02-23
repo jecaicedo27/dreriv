@@ -41,12 +41,34 @@ class TechnicalIndicators:
             rs = gain / (loss + 1e-10)
             df['rsi_14'] = 100 - (100 / (1 + rs))
             
+            # Stochastic RSI (K line, 0-100 scale)
+            rsi_series = df['rsi_14']
+            rsi_min = rsi_series.rolling(window=14).min()
+            rsi_max = rsi_series.rolling(window=14).max()
+            stoch_rsi_raw = ((rsi_series - rsi_min) / (rsi_max - rsi_min + 1e-10)) * 100
+            df['stoch_rsi'] = stoch_rsi_raw.rolling(window=3).mean()  # Smoothed K line
+            
             # ATR (Average True Range)
             high_low = df['high'] - df['low']
             high_close = np.abs(df['high'] - df['close'].shift())
             low_close = np.abs(df['low'] - df['close'].shift())
             tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
             df['atr_14'] = tr.rolling(window=14).mean()
+            
+            # ADX (Average Directional Index) with +DI/-DI
+            # Directional Movement
+            up_move = df['high'] - df['high'].shift(1)
+            down_move = df['low'].shift(1) - df['low']
+            plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+            minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+            # Smoothed with Wilder's EMA (alpha = 1/14)
+            atr_smooth = tr.ewm(alpha=1/14, adjust=False).mean()
+            plus_di = 100 * pd.Series(plus_dm, index=df.index).ewm(alpha=1/14, adjust=False).mean() / (atr_smooth + 1e-10)
+            minus_di = 100 * pd.Series(minus_dm, index=df.index).ewm(alpha=1/14, adjust=False).mean() / (atr_smooth + 1e-10)
+            dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di + 1e-10)
+            df['adx_14'] = dx.ewm(alpha=1/14, adjust=False).mean()
+            df['plus_di'] = plus_di
+            df['minus_di'] = minus_di
             
             # Bollinger Bands
             df['bollinger_middle'] = df['close'].rolling(window=20).mean()
@@ -136,4 +158,7 @@ class TechnicalIndicators:
             'ema_cross_age': int(latest.get('ema_cross_age', 0)),
             'ema_diverging': bool(int(latest.get('ema_diverging', 0))),
             'ema_separation_rate': float(latest.get('ema_gap_rate', 0)),
+            'adx_14': float(latest.get('adx_14', 0)),
+            'plus_di': float(latest.get('plus_di', 0)),
+            'minus_di': float(latest.get('minus_di', 0)),
         }
