@@ -100,6 +100,22 @@ _ENGINES = {
             "dir_cooldown_candles": 0,
         },
     },
+    "bullish_groq_v5": {
+        "module": "app.analysis.bullish_groq_v5",
+        "class": "BullishGroqEngine",
+        "description": "Bullish Groq v5: Hybrid AI Engine (High Volume, Groq Validated)",
+        "version": "5.0-Groq",
+        "hurst_min": 0.55,
+        "hurst_max": 0.85,
+        "confidence_min": 0.50,
+        "confidence_max": 1.0,
+        "blocked_hours": [],
+        "defensive": {
+            **_DEFAULT_DEFENSIVE,
+            "cooldown_candles": 1,
+            "dir_cooldown_candles": 0,
+        },
+    },
 
     "reversal_v5": {
         "module": "app.analysis.reversal_engine",

@@ -22,7 +22,7 @@ class UltimateBullEngine(BaseAnalysisEngine):
     
     def analyze(self, df: pd.DataFrame, symbol: str = "R_100", **kwargs) -> Dict[str, Any]:
         """Strictly CALL or HOLD evaluation."""
-        hurst_min = kwargs.get('hurst_min', 0.60) # Stricter default
+        hurst_min = kwargs.get('hurst_min', 0.55) # Relaxed to allow standard uptrends
         hurst_max = kwargs.get('hurst_max', 0.85)
         
         reasoning = []
@@ -62,57 +62,73 @@ class UltimateBullEngine(BaseAnalysisEngine):
         ema_diverging = bool(int(latest.get('ema_diverging', 0) or 0))
         ema_gap_rate = float(latest.get('ema_gap_rate', 0) or 0)
         
-        # ===== GATE 1: EMA ALIGNMENT (Perfect Bullish) =====
-        if not (current_price > ema_50 and ema_9 > ema_21 and ema_21 > ema_50):
-            reasoning.append(f"EMAs not perfectly aligned (P={current_price:.1f}, E9={ema_9:.1f}, E21={ema_21:.1f}, E50={ema_50:.1f})")
+        # ===== GATE 1: EMA TREND (Bullish Macro) =====
+        ema_50_prev = float(df.iloc[-2].get('ema_50', 0) or 0) if len(df) >= 2 else 0
+        if ema_50 <= ema_50_prev:
+            reasoning.append(f"EMA 50 is not rising (Curr {ema_50:.1f} <= Prev {ema_50_prev:.1f})")
             return self._hold_response(reasoning)
             
-        reasoning.append(f"✅ EMA Perfect Alignment")
-        
-        # Removed ema_diverging constraint because it rejects valid pullbacks
-        # if not ema_diverging or ema_gap_rate < 0:
-        #     reasoning.append("EMAs are converging, trend losing steam")
-        #     return self._hold_response(reasoning)
+        if current_price <= ema_50:
+            reasoning.append(f"Price below EMA 50 (P={current_price:.1f})")
+            return self._hold_response(reasoning)
             
+        reasoning.append(f"✅ Bullish Macro Trend Active")
+        
         # ===== GATE 2: MOMENTUM (MACD + RSI) =====
-        if macd_hist <= 0:
-            reasoning.append(f"MACD Histogram negative ({macd_hist:.4f})")
+        if macd_hist <= 0.2: # The optimizer found that MACD must be heavily positive (>0.2)
+            reasoning.append(f"MACD Histogram not strong enough ({macd_hist:.4f} <= 0.2)")
             return self._hold_response(reasoning)
             
-        if rsi < 50 or rsi > 60:
-            reasoning.append(f"RSI out of sweet spot (RSI={rsi:.1f}, want 50-60)")
+        if rsi < 45 or rsi > 55: # Optimizer showed 45-55 is the mathematical sweet spot to avoid peak exhaustion
+            reasoning.append(f"RSI out of sweet spot (RSI={rsi:.1f}, want 45-55)")
             return self._hold_response(reasoning)
             
-        if momentum_5 <= 0:
-            reasoning.append(f"Short-term momentum negative ({momentum_5:.3f})")
-            return self._hold_response(reasoning)
-            
-        reasoning.append(f"✅ Strong Momentum (RSI={rsi:.1f}, MACD={macd_hist:.4f})")
-        
-        # ===== GATE 3: ENTRY PULLBACK QUALITY =====
-        # We want the price to be relatively close to the EMA_9 or EMA_21, not sky-high touching upper BB
-        dist_to_ema9_pct = (current_price - ema_9) / ema_9 * 100
+        # ===== GATE 3: ENTRY PULLBACK QUALITY & HEIKIN-ASHI FILTRATION =====
+        # Optimizer determined that buying perfectly around EMA_21 (-0.2% to 0.2%) yields the highest edge
+        dist_to_ema21_pct = (current_price - ema_21) / ema_21 * 100
         
         if current_price >= bb_upper:
             reasoning.append(f"Price piercing upper Bollinger Band — overextended")
             return self._hold_response(reasoning)
             
-        if dist_to_ema9_pct > 0.4:  # Too far away from the fast moving average
-            reasoning.append(f"Price too far from EMA_9 (+{dist_to_ema9_pct:.2f}%) — wait for dip")
+        if dist_to_ema21_pct < -0.2 or dist_to_ema21_pct > 0.2:
+            reasoning.append(f"Price not snug at EMA_21 (dist={dist_to_ema21_pct:.2f}%) — wait for exact zone")
             return self._hold_response(reasoning)
             
-        reasoning.append(f"✅ Good Entry Proximity (dist EMA9={dist_to_ema9_pct:.2f}%)")
+        # Fast Heikin-Ashi calculation (last 3 candles)
+        if len(df) >= 3:
+            recent_df = df.iloc[-3:].copy()
+            
+            # HA Candle t-2 (Anchor)
+            ha_open_2 = (float(df.iloc[-4]['open']) + float(df.iloc[-4]['close'])) / 2 if len(df) >= 4 else float(recent_df.iloc[0]['open'])
+            ha_close_2 = (float(recent_df.iloc[0]['open']) + float(recent_df.iloc[0]['high']) + float(recent_df.iloc[0]['low']) + float(recent_df.iloc[0]['close'])) / 4
+            
+            # HA Candle t-1
+            ha_open_1 = (ha_open_2 + ha_close_2) / 2
+            ha_close_1 = (float(recent_df.iloc[1]['open']) + float(recent_df.iloc[1]['high']) + float(recent_df.iloc[1]['low']) + float(recent_df.iloc[1]['close'])) / 4
+            
+            # HA Candle t (Current)
+            ha_open_0 = (ha_open_1 + ha_close_1) / 2
+            ha_close_0 = (float(recent_df.iloc[2]['open']) + float(recent_df.iloc[2]['high']) + float(recent_df.iloc[2]['low']) + float(recent_df.iloc[2]['close'])) / 4
+            
+            if ha_close_0 <= ha_open_0:
+                reasoning.append(f"Heikin-Ashi current candle is RED (HA_Close {ha_close_0:.1f} <= HA_Open {ha_open_0:.1f}) — Pullback not finished")
+                return self._hold_response(reasoning)
+                
+            reasoning.append(f"✅ Pullback accepted: HA Trend is GREEN")
+
+        reasoning.append(f"✅ Deep Pullback Zone (dist EMA21={dist_to_ema21_pct:.2f}%)")
         
         # ===== SCORING AND CONFIDENCE =====
-        # Base confidence for clearing all strict gates
-        confidence = 0.65
+        # Base confidence for clearing all strict optimizer gates
+        confidence = 0.70
         
         # Bonus for RSI in the absolute prime zone
         if 55 <= rsi <= 65:
             confidence += 0.05
             
-        # Bonus for a very clean pullback (touching or slightly below EMA 9 but above EMA 21)
-        if dist_to_ema9_pct <= 0.2 and current_price > ema_21:
+        # Bonus for a very clean pullback (touching or slightly below EMA 21)
+        if dist_to_ema21_pct <= 0.05 and current_price > ema_50:
             confidence += 0.08
             
         # Bonus for strong MACD momentum
