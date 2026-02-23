@@ -324,7 +324,7 @@ class ReplayBotSimulator:
                         "index": i,
                         "candle_index": i - lookback_count,
                         "exit_candle_index": exit_idx - lookback_count,
-                        "time": str(entry_candle['open_time'] - timedelta(hours=5)),
+                        "time": (entry_candle['open_time'] - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
                         "timestamp": int(entry_candle['open_time'].timestamp()),
                         "direction": final_signal,
                         "stake": round(stake, 2),

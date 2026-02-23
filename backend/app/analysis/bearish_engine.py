@@ -142,26 +142,22 @@ class BearishBreakdownEngine(BaseAnalysisEngine):
         sep_score = min(ema_separation / 0.008, 1.0) * 25
         quality += sep_score
         
-        # Factor 2: Price BELOW EMA21 (0-20 points) — bearish = price under EMAs
+        # Factor 2: Price BELOW EMA21 — bearish = price under EMAs
         if current_price < ema_21:
             price_below_pct = (ema_21 - current_price) / ema_21 * 100
-            if price_below_pct < 1.5:  # Not overextended
-                quality += 20
-            elif price_below_pct < 2.5:
-                quality += 10
-            else:
-                quality += 5  # Overextended downward
-                reasoning.append(f"⚠️ Overextended -{price_below_pct:.2f}% below EMA21")
+            if price_below_pct > 0.5:  # STRICT GATE: Requires tight pullback
+                reasoning.append(f"⚠️ Overextended -{price_below_pct:.2f}% below EMA21 — wait for pullback")
+                return self._hold_response(reasoning)
+            quality += 20
         else:
             reasoning.append(f"⚠️ Price above EMA21 (bounce in downtrend)")
             quality += 8  # Potential short on bounce
         
-        # Factor 3: RSI momentum zone (0-20 points) — bearish sweet spot is 25-50
-        if 25 <= rsi <= 50:
+        if 40 <= rsi <= 50:
             quality += 20  # Sweet spot for bear trend
-        elif 20 <= rsi <= 60:
+        elif 35 <= rsi <= 60:
             quality += 12
-        elif rsi < 20:
+        elif rsi < 35:
             quality += 5   # Oversold but still might work
             reasoning.append(f"⚠️ RSI oversold ({rsi:.1f})")
         else:
@@ -205,7 +201,7 @@ class BearishBreakdownEngine(BaseAnalysisEngine):
             return self._hold_response(reasoning)
         
         # ===== EXHAUSTION / SAFETY CHECKS =====
-        if rsi <= 15:
+        if rsi <= 35:
             reasoning.append(f"RSI extreme oversold ({rsi:.1f}) — bounce risk too high, skip")
             return self._hold_response(reasoning)
         if rsi >= 55:

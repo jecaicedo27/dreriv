@@ -79,8 +79,8 @@ class UltimateBullEngine(BaseAnalysisEngine):
             reasoning.append(f"MACD Histogram negative ({macd_hist:.4f})")
             return self._hold_response(reasoning)
             
-        if rsi < 50 or rsi > 72:
-            reasoning.append(f"RSI out of sweet spot (RSI={rsi:.1f}, want 50-72)")
+        if rsi < 50 or rsi > 60:
+            reasoning.append(f"RSI out of sweet spot (RSI={rsi:.1f}, want 50-60)")
             return self._hold_response(reasoning)
             
         if momentum_5 <= 0:
@@ -97,7 +97,7 @@ class UltimateBullEngine(BaseAnalysisEngine):
             reasoning.append(f"Price piercing upper Bollinger Band — overextended")
             return self._hold_response(reasoning)
             
-        if dist_to_ema9_pct > 1.0:  # Too far away from the fast moving average
+        if dist_to_ema9_pct > 0.4:  # Too far away from the fast moving average
             reasoning.append(f"Price too far from EMA_9 (+{dist_to_ema9_pct:.2f}%) — wait for dip")
             return self._hold_response(reasoning)
             
