@@ -15,7 +15,6 @@ from app.services.data_collector import DataCollector
 from app.services.risk_manager import RiskManager
 from app.services.trade_executor import TradeExecutor
 from app.services.telegram_notifier import telegram_notifier
-from app.analysis.layer1_engine import Layer1SignalEngine
 from app.models.models import BotState, Candle
 
 settings = get_settings()
@@ -98,6 +97,8 @@ class TradingBot:
         self.is_running = False
         self.last_analysis_time = None
         self.analysis_interval = 60  # Analyze every 60 seconds
+        self._last_tick_epoch = 0    # Track last tick for staleness watchdog
+        self._watchdog_alerted = False  # Prevent spam alerts
     
     async def start(self):
         """Start the trading bot"""
@@ -148,9 +149,9 @@ class TradingBot:
         logger.info("💰 Subscribing to balance updates...")
         await deriv_client.subscribe_balance()
         
-        # Subscribe to ticks - DISABLED (Handled by feeder)
-        # logger.info(f"📊 Subscribing to {self.symbol}...")
-        # await deriv_client.subscribe_to_ticks(self.symbol)
+        # Subscribe to ticks for live candle building
+        logger.info(f"📊 Subscribing to {self.symbol} ticks...")
+        await deriv_client.subscribe_to_ticks(self.symbol)
         
         # Send startup notification
         await telegram_notifier.notify_bot_started()
@@ -160,6 +161,9 @@ class TradingBot:
         
         # Start settlement loop
         asyncio.create_task(self._check_trades_loop())
+        
+        # Start candle staleness watchdog
+        asyncio.create_task(self._candle_watchdog_loop())
         
         # Start main loop
         logger.success("✅ Bot started - entering main loop")
@@ -195,12 +199,13 @@ class TradingBot:
     
     async def _on_tick(self, tick_data: dict):
         """
-        Callback for incoming ticks
+        Callback for incoming ticks — saves raw ticks and builds 1-min candles
         """
-        # Process tick (save and update candles)
-        # DISABLED: Data collection handled by feeder service
-        # await self.data_collector.process_tick(tick_data)
-        pass
+        try:
+            await self.data_collector.process_tick(tick_data)
+            self._last_tick_epoch = tick_data.get('epoch', 0)
+        except Exception as e:
+            logger.error(f"❌ Error processing tick: {e}")
     
     async def _on_balance_update(self, balance_data: dict):
         """
@@ -369,6 +374,41 @@ class TradingBot:
                 logger.warning("⚠️ Not enough candle data yet")
                 return
             
+            # ===== CIRCUIT BREAKER: Refuse to trade if indicators are missing =====
+            # Check last 5 candles for critical indicators
+            critical_cols = ['rsi_14', 'ema_50', 'macd_histogram']
+            last_5 = df.tail(5)
+            complete_count = 0
+            for _, row in last_5.iterrows():
+                if all(row.get(col) is not None and row.get(col) != 0 for col in critical_cols):
+                    complete_count += 1
+            
+            if complete_count < 3:
+                missing_detail = []
+                latest = df.iloc[-1]
+                for col in critical_cols:
+                    val = latest.get(col)
+                    missing_detail.append(f"{col}={'NULL' if val is None else val}")
+                logger.warning(f"🚫 CIRCUIT BREAKER: Indicadores incompletos ({complete_count}/5 candles OK). "
+                             f"Latest: {', '.join(missing_detail)}. NO TRADE.")
+                
+                # One-time Telegram alert
+                if not getattr(self, '_indicator_breach_alerted', False):
+                    self._indicator_breach_alerted = True
+                    try:
+                        await self.telegram.send_alert(
+                            "🚫 CIRCUIT BREAKER ACTIVADO\n"
+                            f"Indicadores incompletos ({complete_count}/5 candles con RSI/EMA/MACD).\n"
+                            "El bot NO operará hasta que los indicadores se calculen.\n"
+                            "Ejecute backfill_two_pass.py si es necesario."
+                        )
+                    except Exception:
+                        pass
+                return
+            else:
+                # Reset alert flag when indicators are healthy
+                self._indicator_breach_alerted = False
+            
             # ===== FILTER: ATR volatility gate =====
             if self.enable_atr_gate and len(df) >= self.atr_lookback:
                 try:
@@ -391,23 +431,108 @@ class TradingBot:
             except Exception as e:
                 logger.debug(f"Decision resolver: {e}")
             
-            # ===== THE SINGLE BRAIN — TradingCore =====
+            # ===== MULTI-ENGINE PARALLEL BRAIN =====
             from app.simulation.trading_core import TradingCore
-            result = await TradingCore.analyze_async(
-                engine=self.signal_engine,
-                df=df,
-                symbol=self.symbol,
-                use_groq=settings.USE_GROQ_LAYER2,
-                ai_provider='groq',
-                hurst_min=self.hurst_min,
-                hurst_max=self.hurst_max,
-            )
+            from app.analysis.engine_registry import get_engine, get_engine_config, _ENGINES
+            import json as _json
+            
+            # Load active engines from DB
+            try:
+                from sqlalchemy import text as _txt
+                _row = self.db.execute(_txt("SELECT value FROM bot_settings WHERE key = 'active_engines'")).fetchone()
+                active_engines = _json.loads(_row[0]) if _row else [self.engine_name]
+                active_engines = [e for e in active_engines if e in _ENGINES]
+                if not active_engines:
+                    active_engines = [self.engine_name]
+            except:
+                active_engines = [self.engine_name]
+            
+            # Run ALL active engines and collect decisions
+            engine_decisions = {}
+            best_result = None
+            best_confidence = -1
+            best_engine = active_engines[0]
+            
+            for eng_name in active_engines:
+                try:
+                    eng = get_engine(eng_name)
+                    eng_cfg = get_engine_config(eng_name)
+                    h_min = eng_cfg.get('hurst_min', 0.6)
+                    h_max = eng_cfg.get('hurst_max', 0.7)
+                    b_hours = set(eng_cfg.get('blocked_hours', []))
+                    
+                    # Check hour block for this engine
+                    from datetime import timezone as _tz, timedelta as _td
+                    col_tz = _tz(_td(hours=-5))
+                    col_hr = datetime.now(col_tz).hour
+                    
+                    if col_hr in b_hours:
+                        engine_decisions[eng_name] = {
+                            "signal": "BLOCKED", "confidence": 0,
+                            "reasoning": f"Hora {col_hr:02d} bloqueada",
+                        }
+                        logger.debug(f"🚫 {eng_name}: hora {col_hr} bloqueada")
+                        continue
+                    
+                    eng_result = await TradingCore.analyze_async(
+                        engine=eng, df=df, symbol=self.symbol,
+                        use_groq=settings.USE_GROQ_LAYER2,
+                        ai_provider='groq',
+                        hurst_min=h_min, hurst_max=h_max,
+                    )
+                    
+                    eng_action = eng_result.get("action", "HOLD")
+                    eng_conf = eng_result.get("confidence", 0)
+                    
+                    engine_decisions[eng_name] = {
+                        "signal": eng_action,
+                        "confidence": round(eng_conf, 3),
+                        "reasoning": eng_result.get("reasoning", "")[:100],
+                    }
+                    
+                    logger.info(f"🧠 {eng_name}: {eng_action} ({eng_conf:.2%})")
+                    
+                    if eng_action in ('CALL', 'PUT') and eng_conf > best_confidence:
+                        best_confidence = eng_conf
+                        best_result = eng_result
+                        best_engine = eng_name
+                        best_engine_instance = eng  # Keep ref for duration/cooldown
+                        
+                except Exception as eng_err:
+                    engine_decisions[eng_name] = {
+                        "signal": "ERROR", "confidence": 0,
+                        "reasoning": str(eng_err)[:80],
+                    }
+                    logger.error(f"❌ {eng_name} error: {eng_err}")
+            
+            # Store decisions for dashboard API
+            try:
+                from app.api.bot_status import _active_engines as _
+                import app.api.bot_status as _bs
+                _bs._latest_engine_decisions = engine_decisions
+            except:
+                pass
+            
+            # Use best result or fallback
+            if best_result is None:
+                # No engine gave CALL/PUT — use primary engine's HOLD result
+                result = await TradingCore.analyze_async(
+                    engine=self.signal_engine, df=df, symbol=self.symbol,
+                    use_groq=False, hurst_min=self.hurst_min, hurst_max=self.hurst_max,
+                )
+                best_engine = self.engine_name
+                best_eng_duration = self.signal_engine.duration_seconds
+                best_eng_cooldown = self.signal_engine.COOLDOWN_CANDLES
+            else:
+                result = best_result
+                best_eng_duration = best_engine_instance.duration_seconds
+                best_eng_cooldown = best_engine_instance.COOLDOWN_CANDLES
             
             final_decision = result["action"]
             final_confidence = result["confidence"]
             l1_signal = result["l1_signal"]
             
-            logger.info(f"📊 L1: {l1_signal} ({result['l1_confidence']:.2%}) → Final: {final_decision} ({final_confidence:.2%})")
+            logger.info(f"📊 L1: {l1_signal} ({result['l1_confidence']:.2%}) → Final: {final_decision} ({final_confidence:.2%}) [engine: {best_engine}]")
             if result["groq_used"]:
                 logger.success(f"🧠 AI ({result['ai_provider']}): {result['reasoning'][:150]}")
             
@@ -422,7 +547,7 @@ class TradingBot:
                         l1_confidence=result["l1_confidence"],
                         groq_signal=final_decision,
                         groq_confidence=final_confidence,
-                        duration=300
+                        duration=best_eng_duration
                     )
                 except Exception as e:
                     logger.error(f"❌ Failed to track decision: {e}")
@@ -468,7 +593,7 @@ class TradingBot:
                     final_signal=final_decision,
                     final_confidence=final_confidence,
                     current_price=result["entry_price"],
-                    duration=300,
+                    duration=best_eng_duration,
                     rsi_14=rsi_val,
                     ema_9=ema9_val,
                     ema_21=ema21_val,
@@ -526,10 +651,10 @@ class TradingBot:
                         'final_confidence': final_confidence,
                         'current_price': result['entry_price'],
                         'suggested_stake_multiplier': 1.0,
-                        'duration': 300,
+                        'duration': best_eng_duration,
                         'reasoning': result['reasoning'],
                         'hurst_signal': {'hurst': real_hurst},
-                        'engine_name': settings.ENGINE_NAME,
+                        'engine_name': best_engine,
                     }
                     
                     # Execute trade
@@ -537,8 +662,8 @@ class TradingBot:
                     
                     if trade:
                         logger.success(f"✅ Trade executed: {trade.id}")
-                        # Apply cooldown after trade
-                        self._pause_until_candle = self._candle_count + self.cooldown_candles
+                        # Apply cooldown after trade (from winning engine)
+                        self._pause_until_candle = self._candle_count + best_eng_cooldown
                     else:
                         logger.warning("⚠️ Trade execution blocked by risk management")
                 else:
@@ -565,6 +690,68 @@ class TradingBot:
             except Exception as e:
                 logger.error(f"❌ Error in trade settlement loop: {e}")
                 await asyncio.sleep(60)
+
+    async def _candle_watchdog_loop(self):
+        """
+        Background watchdog: ensures candle data stays fresh.
+        If no tick arrives in 10 minutes, alerts via Telegram and
+        attempts to re-subscribe to the tick stream.
+        """
+        logger.info("🐕 Candle watchdog started (checks every 5 min)")
+        await asyncio.sleep(120)  # Give the bot 2 min to warm up
+        
+        STALE_THRESHOLD_SECS = 600  # 10 minutes without a tick = stale
+        
+        while self.is_running:
+            try:
+                import time
+                now = int(time.time())
+                gap = now - self._last_tick_epoch if self._last_tick_epoch else None
+                
+                if gap is None or gap > STALE_THRESHOLD_SECS:
+                    gap_min = gap // 60 if gap else '∞'
+                    logger.warning(f"🚨 WATCHDOG: Candle data STALE! Last tick {gap_min} min ago. Attempting recovery...")
+                    
+                    # Alert via Telegram (once per stale episode)
+                    if not self._watchdog_alerted:
+                        await telegram_notifier.send_message(
+                            f"🚨 *ALERTA: Datos Congelados*\n"
+                            f"Último tick hace {gap_min} minutos.\n"
+                            f"Intentando reconexión automática..."
+                        )
+                        self._watchdog_alerted = True
+                    
+                    # Attempt recovery: re-subscribe to ticks
+                    try:
+                        logger.info("🔄 Watchdog: Re-subscribing to tick stream...")
+                        await deriv_client.subscribe_to_ticks(self.symbol)
+                        logger.success("✅ Watchdog: Tick re-subscription sent")
+                    except Exception as e:
+                        logger.error(f"❌ Watchdog: Re-subscribe failed: {e}")
+                        # Try full reconnect
+                        try:
+                            logger.info("🔌 Watchdog: Attempting full WebSocket reconnect...")
+                            await deriv_client.connect()
+                            auth = await deriv_client.authorize()
+                            if auth:
+                                await deriv_client.subscribe_to_ticks(self.symbol)
+                                await deriv_client.subscribe_balance()
+                                logger.success("✅ Watchdog: Full reconnect successful")
+                                await telegram_notifier.send_message("✅ Reconexión exitosa. Datos frescos restaurados.")
+                        except Exception as e2:
+                            logger.error(f"❌ Watchdog: Full reconnect failed: {e2}")
+                else:
+                    # Data is fresh — reset alert flag
+                    if self._watchdog_alerted:
+                        logger.success(f"✅ WATCHDOG: Data stream recovered! Last tick {gap}s ago.")
+                        await telegram_notifier.send_message("✅ Datos restaurados. El bot vuelve a operar con datos frescos.")
+                        self._watchdog_alerted = False
+                
+                await asyncio.sleep(300)  # Check every 5 minutes
+                
+            except Exception as e:
+                logger.error(f"❌ Watchdog error: {e}")
+                await asyncio.sleep(300)
     
     async def stop(self):
         """Stop the trading bot gracefully"""

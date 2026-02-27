@@ -119,6 +119,47 @@ class TechnicalIndicators:
                 ((df['ema_gap'] < 0) & (df['ema_gap_rate'] < 0))    # Bearish & widening
             ).astype(int)
             
+            # ===== ATF: Adaptive Trend Flow (QuantAlgo) =====
+            # Dual-EMA basis with volatility-adjusted bands
+            atf_fast_len = 10   # Main Length
+            atf_slow_len = 14   # Smoothing Length  
+            atf_sensitivity = 2.0  # Band sensitivity
+            
+            atf_fast_ema = df['close'].ewm(span=atf_fast_len, adjust=False).mean()
+            atf_slow_ema = df['close'].ewm(span=atf_slow_len, adjust=False).mean()
+            df['atf_basis'] = (atf_fast_ema + atf_slow_ema) / 2.0
+            
+            # Volatility: smoothed stddev of close, window=smoothing length
+            atf_raw_vol = df['close'].rolling(window=atf_slow_len).std()
+            atf_smoothed_vol = atf_raw_vol.ewm(span=atf_slow_len, adjust=False).mean()
+            
+            # Adaptive bands
+            df['atf_upper'] = df['atf_basis'] + (atf_smoothed_vol * atf_sensitivity)
+            df['atf_lower'] = df['atf_basis'] - (atf_smoothed_vol * atf_sensitivity)
+            
+            # Trend detection: +1 = bullish (close above upper band),
+            #                   -1 = bearish (close below lower band), 0 = neutral
+            atf_trend = pd.Series(0, index=df.index, dtype=int)
+            for i in range(1, len(df)):
+                prev_trend = atf_trend.iloc[i-1]
+                close_val = df['close'].iloc[i]
+                upper_val = df['atf_upper'].iloc[i]
+                lower_val = df['atf_lower'].iloc[i]
+                
+                if pd.isna(upper_val) or pd.isna(lower_val):
+                    atf_trend.iloc[i] = prev_trend
+                elif close_val > upper_val:
+                    atf_trend.iloc[i] = 1   # Bullish breakout
+                elif close_val < lower_val:
+                    atf_trend.iloc[i] = -1  # Bearish breakdown
+                else:
+                    atf_trend.iloc[i] = prev_trend  # Stay in current trend
+            
+            df['atf_trend'] = atf_trend
+            
+            # Slope of basis (rate of change over 3 bars — direction + strength)
+            df['atf_slope'] = df['atf_basis'].diff(3) / (df['atf_basis'].shift(3) + 1e-10) * 100
+            
             logger.debug(f"✅ Calculated indicators for {len(df)} candles")
             return df
             

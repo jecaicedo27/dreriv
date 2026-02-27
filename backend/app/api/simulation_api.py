@@ -75,7 +75,7 @@ def get_replay_candles(
     # Get all candles for the date
     result = db.execute(text("""
         SELECT open_time, open, high, low, close,
-               rsi_14, ema_21, ema_50,
+               rsi_14, ema_9, ema_21, ema_50,
                macd, macd_signal, macd_histogram,
                bollinger_upper, bollinger_middle, bollinger_lower,
                hurst_exponent, hurst_fast, ou_deviation, regime,
@@ -105,6 +105,7 @@ def get_replay_candles(
             "low": float(row.low),
             "close": float(row.close),
             "rsi": round(float(row.rsi_14 or 50), 1),
+            "ema_9": float(row.ema_9) if row.ema_9 else None,
             "ema_21": float(row.ema_21) if row.ema_21 else None,
             "ema_50": float(row.ema_50) if row.ema_50 else None,
             "macd": round(float(row.macd or 0), 4),
@@ -359,7 +360,7 @@ def simulate_bot(
         "stake": stake,
         "min_confidence": confidence,
         "payout_rate": 0.95,
-        "duration_candles": 5,
+        "duration_candles": engine_cfg.get("duration_candles", 5),
         "initial_balance": 10000.0,
         "cooldown_candles": 1,
         "engine_name": engine_name,
@@ -717,19 +718,29 @@ async def bot_precompute(
     between visual and multi-day simulations.
     """
     from app.simulation.replay_bot import ReplayBotSimulator
+    from app.analysis.engine_registry import get_engine_config
+    engine_cfg = get_engine_config(engine_name) or {}
+    defensive = engine_cfg.get("defensive", {})
     config = {
-        "min_confidence": confidence,
-        "max_confidence": max_confidence,
+        "min_confidence": engine_cfg.get("confidence_min", confidence),
+        "max_confidence": engine_cfg.get("confidence_max", max_confidence),
         "payout_rate": 0.95,
-        "duration_candles": 5,
+        "duration_candles": engine_cfg.get("duration_candles", 5),
         "initial_balance": 10000.0,
-        "cooldown_candles": 1,
+        "cooldown_candles": defensive.get("cooldown_candles", 3),
         "use_groq": use_groq,
         "ai_provider": ai_provider,
-        "hurst_min": hurst_min,
-        "hurst_max": hurst_max,
-        "blocked_hours": [int(h.strip()) for h in blocked_hours.split(',') if h.strip()] if blocked_hours else [],
+        "hurst_min": engine_cfg.get("hurst_min", hurst_min),
+        "hurst_max": engine_cfg.get("hurst_max", hurst_max),
+        "blocked_hours": engine_cfg.get("blocked_hours", [int(h.strip()) for h in blocked_hours.split(',') if h.strip()] if blocked_hours else []),
         "engine_name": engine_name,
+        # Defensive parameters from engine config
+        "enable_wr_monitor": defensive.get("enable_wr_monitor", True),
+        "wr_pause_threshold": defensive.get("wr_pause_threshold", 0.47),
+        "wr_stop_threshold": defensive.get("wr_stop_threshold", 0.42),
+        "enable_global_streak": defensive.get("enable_global_streak", True),
+        "enable_atr_gate": defensive.get("enable_atr_gate", True),
+        "dir_cooldown_candles": defensive.get("dir_cooldown_candles", 30),
     }
     bot = ReplayBotSimulator(config)
     result = await bot._run_async(db, date, 'R_100')
@@ -812,16 +823,21 @@ def simulate_multi(
     start_date: str = Query(None, description="Start date (YYYY-MM-DD), null = all data"),
     end_date: str = Query(None, description="End date (YYYY-MM-DD), null = all data"),
     stake: float = Query(60.0, description="Stake per trade"),
-    confidence: float = Query(0.60, description="Min confidence threshold"),
-    max_confidence: float = Query(1.0, description="Max confidence threshold"),
+    confidence: str = Query("0.60", description="Min confidence threshold"),
+    max_confidence: str = Query("1.0", description="Max confidence threshold"),
     use_groq: bool = Query(False, description="Use Groq AI Layer 2"),
-    hurst_min: float = Query(0.6, description="Min Hurst for trending trades"),
-    hurst_max: float = Query(0.7, description="Max Hurst for trending trades"),
+    hurst_min: str = Query("0.6", description="Min Hurst for trending trades"),
+    hurst_max: str = Query("0.7", description="Max Hurst for trending trades"),
     blocked_hours: str = Query("", description="Comma-separated Colombia-time hours to skip"),
     engine_name: str = Query("original_v1", description="Analysis engine to use"),
     db: Session = Depends(get_db),
 ):
     """Run bot simulation across multiple days (date range or all available data)"""
+    # Parse numeric params safely (empty strings → defaults)
+    confidence_val = float(confidence) if confidence else 0.60
+    max_confidence_val = float(max_confidence) if max_confidence else 1.0
+    hurst_min_val = float(hurst_min) if hurst_min else 0.6
+    hurst_max_val = float(hurst_max) if hurst_max else 0.7
     global _multi_sim_status
 
     if _multi_sim_status["running"]:
@@ -877,15 +893,15 @@ def simulate_multi(
     defensive = engine_cfg.get("defensive", {})
     config = {
         "stake": stake,
-        "min_confidence": engine_cfg.get("confidence_min", confidence),
-        "max_confidence": engine_cfg.get("confidence_max", max_confidence),
+        "min_confidence": engine_cfg.get("confidence_min", confidence_val),
+        "max_confidence": engine_cfg.get("confidence_max", max_confidence_val),
         "payout_rate": 0.95,
-        "duration_candles": 5,
+        "duration_candles": engine_cfg.get("duration_candles", 5),
         "initial_balance": 10000.0,
         "cooldown_candles": defensive.get("cooldown_candles", 3),
         "use_groq": use_groq,
-        "hurst_min": engine_cfg.get("hurst_min", hurst_min),
-        "hurst_max": engine_cfg.get("hurst_max", hurst_max),
+        "hurst_min": engine_cfg.get("hurst_min", hurst_min_val),
+        "hurst_max": engine_cfg.get("hurst_max", hurst_max_val),
         "blocked_hours": [int(h.strip()) for h in blocked_hours.split(',') if h.strip()] if blocked_hours else engine_cfg.get("blocked_hours", []),
         "engine_name": engine_name,
         # Merge ALL defensive filters from registry
@@ -1494,13 +1510,9 @@ _engine_battle_status = {
 }
 
 ENGINE_LIST = [
-    {"name": "original_v1", "icon": "🧠", "label": "Original v1"},
-    {"name": "university_v2", "icon": "🎓", "label": "University v2"},
-    {"name": "bullish_v3", "icon": "🐂", "label": "Bullish v3"},
-    {"name": "bullish_v4", "icon": "🐂", "label": "Bullish v4"},
     {"name": "bullish_v5", "icon": "🐂", "label": "Ultimate Bull v5"},
-    {"name": "reversal_v5", "icon": "🎯", "label": "Reversal Sniper v5"},
-    {"name": "bearish_v6", "icon": "🐻", "label": "Bearish v6"},
+    {"name": "bear_reject_v1", "icon": "🔴", "label": "Three Red Crows"},
+    {"name": "bull_soldiers_v1", "icon": "🟢", "label": "Three White Soldiers"},
 ]
 
 
@@ -1544,7 +1556,7 @@ def _run_engine_sim(engine_name: str, dates: list, config: dict):
                     "min_confidence": engine_cfg.get("confidence_min", config.get("min_confidence", 0.60)),
                     "max_confidence": engine_cfg.get("confidence_max", config.get("max_confidence", 1.0)),
                     "payout_rate": 0.95,
-                    "duration_candles": 5,
+                    "duration_candles": engine_cfg.get("duration_candles", 5),
                     "initial_balance": balance,
                     "cooldown_candles": defensive.get("cooldown_candles", 3),
                     "use_groq": False,
@@ -1785,7 +1797,7 @@ def start_engine_battle(
         "min_confidence": confidence,
         "max_confidence": max_confidence,
         "payout_rate": 0.95,
-        "duration_candles": 5,
+        "duration_candles": engine_cfg.get("duration_candles", 5) if 'engine_cfg' in dir() else 5,
         "initial_balance": 10000.0,
         "cooldown_candles": 1,
         "use_groq": False,

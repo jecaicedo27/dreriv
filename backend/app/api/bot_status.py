@@ -14,6 +14,10 @@ settings = get_settings()
 
 router = APIRouter()
 
+# Module-level active engines list (avoids Pydantic Settings restriction)
+_active_engines = [settings.ENGINE_NAME]
+_latest_engine_decisions = {}  # Updated by bot.py each tick
+
 
 @router.get("/status")
 async def get_bot_status(db: Session = Depends(get_db)):
@@ -52,6 +56,13 @@ async def get_bot_status(db: Session = Depends(get_db)):
         latest_candle = db.query(Candle).order_by(Candle.open_time.desc()).first()
         current_price = latest_candle.close if latest_candle else 0
         
+        # Get latest candle age for health monitoring
+        candle_age_seconds = None
+        candle_is_stale = True
+        if latest_candle and latest_candle.open_time:
+            candle_age_seconds = int((datetime.now(timezone.utc) - latest_candle.open_time.replace(tzinfo=timezone.utc)).total_seconds())
+            candle_is_stale = candle_age_seconds > 600  # 10 minutes
+        
         response = {
             "status": "running",
             "symbol": "R_100",
@@ -70,6 +81,7 @@ async def get_bot_status(db: Session = Depends(get_db)):
             "last_updated": bot_state.updated_at.isoformat() if bot_state.updated_at else None,
             "account_type": settings.DERIV_ACCOUNT_TYPE.upper(),
             "engine_name": settings.ENGINE_NAME,
+            "active_engines": _active_engines,
             "cooldown_until": bot_state.cooldown_until.isoformat() if bot_state.cooldown_until else None,
             "cooldown_reason": bot_state.cooldown_reason,
             
@@ -81,6 +93,14 @@ async def get_bot_status(db: Session = Depends(get_db)):
                 "is_blocked": float(bot_state.current_drawdown_pct or 0) >= settings.MAX_DRAWDOWN_PCT,
                 "consecutive_losses": bot_state.losses_consecutive or 0,
                 "cooldown_active": bot_state.cooldown_until > datetime.now(timezone.utc) if bot_state.cooldown_until else False
+            },
+            
+            # Candle data health
+            "candle_health": {
+                "latest_candle_time": latest_candle.open_time.isoformat() if latest_candle and latest_candle.open_time else None,
+                "age_seconds": candle_age_seconds,
+                "age_minutes": round(candle_age_seconds / 60, 1) if candle_age_seconds else None,
+                "is_stale": candle_is_stale,
             }
         }
 
@@ -169,7 +189,8 @@ async def get_engine_info():
     from app.analysis.engine_registry import _ENGINES
     return {
         "current": settings.ENGINE_NAME,
-        "available": list(_ENGINES.keys())
+        "available": list(_ENGINES.keys()),
+        "active_engines": _active_engines,
     }
 
 
@@ -199,13 +220,101 @@ async def switch_engine(engine_name: str, db: Session = Depends(get_db)):
         "message": f"Engine switched to {engine_name}. Saved to DB."
     }
 
-@router.get("/engine")
-async def get_current_engine(db: Session = Depends(get_db)):
-    """Get the currently saved engine name"""
+
+# ===== MULTI-ENGINE PARALLEL SYSTEM =====
+
+@router.get("/engines/active")
+async def get_active_engines(db: Session = Depends(get_db)):
+    """Get list of active engines running in parallel"""
+    import json as _json
     from sqlalchemy import text
-    row = db.execute(text("SELECT value FROM bot_settings WHERE key = 'engine_name'")).fetchone()
-    engine_name = row[0] if row else settings.ENGINE_NAME
-    return {"engine": engine_name}
+    from app.analysis.engine_registry import _ENGINES
+    
+    row = db.execute(text("SELECT value FROM bot_settings WHERE key = 'active_engines'")).fetchone()
+    if row:
+        active = _json.loads(row[0])
+    else:
+        active = [settings.ENGINE_NAME]
+    
+    # Ensure all active engines still exist
+    active = [e for e in active if e in _ENGINES]
+    if not active:
+        active = [settings.ENGINE_NAME]
+    
+    # Update in-memory
+    global _active_engines
+    _active_engines = active
+    
+    return {
+        "active_engines": active,
+        "available": [
+            {"name": name, "description": cfg.get("description", name), "version": cfg.get("version", "?")}
+            for name, cfg in _ENGINES.items()
+        ]
+    }
+
+
+@router.post("/engines/toggle/{engine_name}")
+async def toggle_engine(engine_name: str, db: Session = Depends(get_db)):
+    """Toggle an engine on/off in the parallel engine list"""
+    import json as _json
+    from sqlalchemy import text
+    from app.analysis.engine_registry import _ENGINES
+    
+    if engine_name not in _ENGINES:
+        raise HTTPException(status_code=400, detail=f"Unknown engine: {engine_name}")
+    
+    # Load current active list
+    row = db.execute(text("SELECT value FROM bot_settings WHERE key = 'active_engines'")).fetchone()
+    if row:
+        active = _json.loads(row[0])
+    else:
+        active = [settings.ENGINE_NAME]
+    
+    # Toggle
+    if engine_name in active:
+        if len(active) <= 1:
+            raise HTTPException(status_code=400, detail="Cannot disable last engine — at least one must be active")
+        active.remove(engine_name)
+        action = "disabled"
+    else:
+        active.append(engine_name)
+        action = "enabled"
+    
+    # Persist
+    active_json = _json.dumps(active)
+    db.execute(text("""
+        INSERT INTO bot_settings (key, value, updated_at)
+        VALUES ('active_engines', :val, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = :val, updated_at = NOW()
+    """), {"val": active_json})
+    db.commit()
+    
+    # Update in-memory
+    global _active_engines
+    _active_engines = active
+    settings.ENGINE_NAME = active[0]  # Primary engine = first active
+    
+    return {
+        "status": "ok",
+        "action": action,
+        "engine": engine_name,
+        "active_engines": active,
+        "message": f"Engine {engine_name} {action}. Active: {active}"
+    }
+
+@router.get("/engines/decisions")
+async def get_engine_decisions():
+    """Get latest decisions from all active engines (updated each tick by bot.py)"""
+    from app.analysis.engine_registry import _ENGINES
+    return {
+        "active_engines": _active_engines,
+        "decisions": _latest_engine_decisions,
+        "available": {
+            name: {"description": cfg.get("description", name), "version": cfg.get("version", "?")}
+            for name, cfg in _ENGINES.items()
+        }
+    }
 
 @router.get("/candles-with-indicators")
 async def get_candles_with_indicators(start_date: str = None, end_date: str = None, db: Session = Depends(get_db)):

@@ -4,8 +4,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>🔬 Laboratorio de Fractalidad — Deriv R_100</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
+    <script>console.log('%c[CHART v2.1] EMAs from BACKEND database', 'color: #10b981; font-size: 14px; font-weight: bold');</script>
     <style>
         * {
             margin: 0;
@@ -561,7 +565,8 @@
 
     <!-- Header -->
     <div class="header">
-        <h1>🔬 Laboratorio de Fractalidad</h1>
+        <h1>🔬 Laboratorio de Fractalidad <span style="font-size:0.4em; color:#10b981; vertical-align:middle;">v2.1 —
+                EMAs backend</span></h1>
         <div class="header-nav">
             <a href="/deriv/dashboard">📊 Dashboard</a>
             <a href="/deriv/simulations" class="active">🔬 Simulaciones</a>
@@ -617,13 +622,12 @@
             <select id="engineSelect"
                 onchange="if(document.getElementById('multiEngineSelect')) document.getElementById('multiEngineSelect').value = this.value;"
                 style="background: #1e1e2e; color: #f9e2af; border: 1px solid #f9e2af55; border-radius: 6px; padding: 4px 8px; font-size: 11px; cursor: pointer; font-weight: 600;">
-                <option value="original_v1">🧠 Original v1</option>
-                <option value="university_v2">🎓 University v2</option>
-                <option value="bullish_v3">🐂 Bullish v3</option>
-                <option value="bullish_v4" selected>🐂 Bullish v4</option>
-                <option value="bullish_v5">🐂 Ultimate Bull v5</option>
-                <option value="reversal_v5">🎯 Reversal Sniper</option>
-                <option value="bearish_v6">🐻 Bearish v6</option>
+                <option value="bullish_v5" selected>🐂 Ultimate Bull v5</option>
+
+
+                <option value="bear_reject_v1">🔴 Three Red Crows</option>
+                <option value="bull_soldiers_v1">🟢 Three White Soldiers</option>
+                <option value="malicia_v1">🦊 Malicia Indígena</option>
             </select>
             <script>
                 // Engine presets — loaded from backend (single source of truth)
@@ -669,13 +673,10 @@
                     if (mes) mes.value = engineValue;
                     // Update hour filter engine label
                     const engineNames = {
-                        'original_v1': '🧠 Original v1',
-                        'university_v2': '🎓 University v2',
-                        'bullish_v3': '🐂 Bullish v3',
-                        'bullish_v4': '🐂 Bullish v4',
                         'bullish_v5': '🐂 Ultimate Bull v5',
-                        'reversal_v5': '🎯 Reversal Sniper',
-                        'bearish_v6': '🐻 Bearish v6',
+                        'bear_reject_v1': '🔴 Three Red Crows',
+                        'bull_soldiers_v1': '🟢 Three White Soldiers',
+                        'malicia_v1': '🦊 Malicia Indígena',
                     };
                     const lbl = document.getElementById('hourFilterEngineLabel');
                     if (lbl) lbl.textContent = engineNames[engineValue] || engineValue;
@@ -752,13 +753,12 @@
                         <select id="multiEngineSelect"
                             onchange="if(document.getElementById('engineSelect')) { document.getElementById('engineSelect').value = this.value; applyEnginePreset(this.value); }"
                             style="background: #1e1e2e; color: #f9e2af; border: 1px solid #f9e2af55; border-radius: 6px; padding: 5px 8px; font-size: 12px; cursor: pointer; font-weight: 600;">
-                            <option value="original_v1">🧠 Original v1</option>
-                            <option value="university_v2">🎓 University v2</option>
-                            <option value="bullish_v3">🐂 Bullish v3</option>
-                            <option value="bullish_v4" selected>🐂 Bullish v4</option>
-                            <option value="bullish_v5">🐂 Ultimate Bull v5</option>
-                            <option value="reversal_v5">🎯 Reversal Sniper</option>
-                            <option value="bearish_v6">🐻 Bearish v6</option>
+                            <option value="bullish_v5" selected>🐂 Ultimate Bull v5</option>
+
+
+                            <option value="bear_reject_v1">🔴 Three Red Crows</option>
+                            <option value="bull_soldiers_v1">🟢 Three White Soldiers</option>
+                            <option value="malicia_v1">🦊 Malicia Indígena</option>
                         </select>
                     </div>
                     <div style="display: flex; flex-direction: column; gap: 3px;">
@@ -785,6 +785,10 @@
 
             <!-- SECTION 4: Actions -->
             <div style="display: flex; flex-direction: column; gap: 6px; justify-content: flex-end;">
+                <button id="btnMultiGroqToggle" onclick="toggleGroqMulti()"
+                    style="background: linear-gradient(135deg, #10b981, #059669); color: #fff; border: none; border-radius: 8px; padding: 8px 20px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;">
+                    🧠 IA: ON
+                </button>
                 <button id="btnMultiSim" onclick="runMultiSim()"
                     style="background: linear-gradient(135deg, #6c3bd5, #8b5cf6); color: #fff; border: none; border-radius: 8px; padding: 8px 20px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;">
                     🚀 Simular Rango
@@ -932,7 +936,7 @@
         <div id="engineBattlePanel"
             style="display: none; margin-top: 16px; background: linear-gradient(135deg, rgba(245, 158, 11, 0.05), rgba(217, 119, 6, 0.02)); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 10px; padding: 16px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                <h4 style="margin: 0; color: #f59e0b; font-size: 14px;">⚔️ Batalla de Motores — 7 Motores en Paralelo
+                <h4 style="margin: 0; color: #f59e0b; font-size: 14px;">⚔️ Batalla de Motores — 8 Motores en Paralelo
                 </h4>
                 <button id="btnEngineBattleStop" onclick="stopEngineBattle()"
                     style="background: #ef4444; color: #fff; border: none; border-radius: 6px; padding: 4px 12px; font-size: 11px; cursor: pointer; display: none;">🛑
@@ -994,10 +998,12 @@
 
                         const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣'];
                         const engineIcons = {
-                            'original_v1': '🧠', 'university_v2': '🎓',
-                            'bullish_v3': '🐂', 'bullish_v4': '🐂', 'bullish_v5': '🐂',
-                            'reversal_v5': '🎯',
-                            'bearish_v6': '🐻'
+                            'bullish_v5': '🐂',
+
+
+                            'bear_reject_v1': '🔴',
+                            'bull_soldiers_v1': '🟢',
+                            'malicia_v1': '🦊',
                         };
 
                         let html = '';
@@ -1303,6 +1309,44 @@
                 🔴 PUT: <span class="stat-value" id="statPut">--</span>
             </div>
         </div>
+
+        <!-- FULL-WIDTH TRADE DETAILS TABLE -->
+        <div id="tradeDetailsSection"
+            style="display:none; margin-top: 16px; background: rgba(30,30,46,0.95); border: 1px solid var(--border); border-radius: 10px; padding: 16px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <h4 style="margin:0; color:#89b4fa; font-size:14px;">📊 Detalle de Operaciones — Indicadores del Motor
+                </h4>
+                <span id="tradeDetailsCount" style="color:#585b70; font-size:11px;"></span>
+            </div>
+            <div style="max-height: 400px; overflow-y: auto; overflow-x: auto;">
+                <table id="tradeDetailsTable"
+                    style="width:100%; border-collapse:collapse; font-size:11px; white-space:nowrap;">
+                    <thead>
+                        <tr
+                            style="color:#a6adc8; border-bottom:2px solid #585b70; position:sticky; top:0; background:#1e1e2e; z-index:1;">
+                            <th style="padding:6px 8px; text-align:left;">#</th>
+                            <th style="padding:6px 8px; text-align:left;">Hora</th>
+                            <th style="padding:6px 8px;">Dir</th>
+                            <th style="padding:6px 8px;">Precio</th>
+                            <th style="padding:6px 8px; color:#10b981;">EMA9</th>
+                            <th style="padding:6px 8px; color:#f59e0b;">EMA21</th>
+                            <th style="padding:6px 8px; color:#3b82f6;">EMA50</th>
+                            <th style="padding:6px 8px;">P>E9</th>
+                            <th style="padding:6px 8px;">P>E21</th>
+                            <th style="padding:6px 8px;">P>E50</th>
+                            <th style="padding:6px 8px;">RSI</th>
+                            <th style="padding:6px 8px;">MACD</th>
+                            <th style="padding:6px 8px;">Hurst</th>
+                            <th style="padding:6px 8px;">Conf</th>
+                            <th style="padding:6px 8px;">Res</th>
+                            <th style="padding:6px 8px; text-align:right;">P&L</th>
+                            <th style="padding:6px 8px; text-align:right;">Balance</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tradeDetailsBody"></tbody>
+                </table>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -1317,6 +1361,7 @@
         let candleSeries = null;
         let bbUpperLine = null;
         let bbLowerLine = null;
+        let ema9Line = null;
         let ema21Line = null;
         let ema50Line = null;
 
@@ -1547,6 +1592,12 @@
             });
 
             // EMAs
+            ema9Line = chart.addLineSeries({
+                color: '#10b981',
+                lineWidth: 1,
+                priceLineVisible: false,
+                lastValueVisible: false,
+            });
             ema21Line = chart.addLineSeries({
                 color: '#f59e0b',
                 lineWidth: 1,
@@ -1619,6 +1670,7 @@
             candleSeries.setData([]);
             bbUpperLine.setData([]);
             bbLowerLine.setData([]);
+            ema9Line.setData([]);
             ema21Line.setData([]);
             ema50Line.setData([]);
 
@@ -1684,14 +1736,15 @@
                     bbLowerLine.update({ time: candle.timestamp, value: bb.lower });
                 }
 
-                // Live-calculated EMAs
-                const ema21 = calcEMA(revealedCloses, 21);
-                const ema50 = calcEMA(revealedCloses, 50);
-                if (ema21 !== null) {
-                    ema21Line.update({ time: candle.timestamp, value: ema21 });
+                // Use BACKEND-computed EMAs (match engine exactly — includes 300-candle lookback)
+                if (candle.ema_9 !== null && candle.ema_9 !== undefined) {
+                    ema9Line.update({ time: candle.timestamp, value: candle.ema_9 });
                 }
-                if (ema50 !== null) {
-                    ema50Line.update({ time: candle.timestamp, value: ema50 });
+                if (candle.ema_21 !== null && candle.ema_21 !== undefined) {
+                    ema21Line.update({ time: candle.timestamp, value: candle.ema_21 });
+                }
+                if (candle.ema_50 !== null && candle.ema_50 !== undefined) {
+                    ema50Line.update({ time: candle.timestamp, value: candle.ema_50 });
                 }
 
                 currentIndex++;
@@ -2154,6 +2207,20 @@
         // ============================================
         let multiSimPolling = null;
 
+        function toggleGroqMulti() {
+            botUseGroq = !botUseGroq;
+            const btn = document.getElementById('btnMultiGroqToggle');
+            if (botUseGroq) {
+                btn.textContent = '🧠 IA: ON';
+                btn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
+                showToast('🧠 IA Layer 2 activada para Multi-Día', 'success');
+            } else {
+                btn.textContent = '📊 IA: OFF';
+                btn.style.background = 'linear-gradient(135deg, #6b7280, #4b5563)';
+                showToast('📊 Solo Layer 1 — sin IA para Multi-Día', 'info');
+            }
+        }
+
         async function stopMultiSim() {
             try {
                 await fetch(`${API_BASE}/simulation/simulate-multi-stop`, { method: 'POST' });
@@ -2193,7 +2260,7 @@
             document.getElementById('multiProgressPct').textContent = '0%';
             document.getElementById('multiProgressText').textContent = 'Iniciando simulación...';
 
-            let url = `${API_BASE}/simulation/simulate-multi?confidence=${confidence}&max_confidence=${maxConfidence}&use_groq=false&hurst_min=${hurstMin}&hurst_max=${hurstMax}&blocked_hours=${blockedHrs}&engine_name=${engineName}`;
+            let url = `${API_BASE}/simulation/simulate-multi?confidence=${confidence}&max_confidence=${maxConfidence}&use_groq=${botUseGroq ? 'true' : 'false'}&hurst_min=${hurstMin}&hurst_max=${hurstMax}&blocked_hours=${blockedHrs}&engine_name=${engineName}`;
             if (startDate) url += `&start_date=${startDate}`;
             if (endDate) url += `&end_date=${endDate}`;
 
@@ -2223,7 +2290,7 @@
                     return;
                 }
 
-                showToast(`🚀 Simulando ${data.total_days} días...`, 'success');
+                showToast(`🚀 Simulando ${data.total_days || data.dates?.length || '?'} días...`, 'success');
 
                 // Start polling
                 if (multiSimPolling) clearInterval(multiSimPolling);
@@ -2590,7 +2657,7 @@
 
                 const hurstMin = document.getElementById('hurstMinSelect')?.value || '0.6';
                 const hurstMax = document.getElementById('hurstMaxSelect')?.value || '0.7';
-                const engineName = document.getElementById('engineSelect')?.value || 'original_v1';
+                const engineName = document.getElementById('engineSelect')?.value || 'bear_reject_v1';
 
                 fetch(`${API_BASE}/simulation/live-step?date=${selectedDate}&candle_index=${candleIndex}&use_groq=true&ai_provider=${botAiProvider}&hurst_min=${hurstMin}&hurst_max=${hurstMax}&engine_name=${engineName}`, { method: 'POST' })
                     .then(r => r.json())
@@ -2639,7 +2706,13 @@
                                 l1_confidence: nextTrade.confidence,
                                 reasoning: groqResult.reasoning || '',
                                 groq_reasoning: groqReasoning,
-                                hurst: groqResult.hurst || 0,
+                                hurst: nextTrade.hurst || 0,
+                                // Technical indicators from backend
+                                ema_9: nextTrade.ema_9 || 0,
+                                ema_21: nextTrade.ema_21 || 0,
+                                ema_50: nextTrade.ema_50 || 0,
+                                rsi_14: nextTrade.rsi_14 || 0,
+                                macd_histogram: nextTrade.macd_histogram || 0,
                                 precomputed_result: nextTrade.result,
                                 precomputed_pnl: nextTrade.pnl,
                                 precomputed_stake: nextTrade.stake,
@@ -2683,9 +2756,9 @@
                 confidence: nextTrade.confidence,
                 entry_price: nextTrade.entry_price,
                 exit_price: nextTrade.exit_price,
-                entry_index: candleIndex,
+                entry_index: nextTrade.candle_index,
                 exit_index: nextTrade.exit_candle_index,
-                timestamp: candle.timestamp,
+                timestamp: allCandles[nextTrade.candle_index].timestamp,
                 time: nextTrade.time,
                 groq_used: nextTrade.groq_used || false,
                 ai_provider: 'precomputed',
@@ -2693,7 +2766,13 @@
                 l1_confidence: nextTrade.l1_confidence || nextTrade.confidence,
                 reasoning: nextTrade.reasoning || '',
                 groq_reasoning: nextTrade.groq_reasoning || '',
-                hurst: 0,
+                hurst: nextTrade.hurst || 0,
+                // Technical indicators from backend
+                ema_9: nextTrade.ema_9 || 0,
+                ema_21: nextTrade.ema_21 || 0,
+                ema_50: nextTrade.ema_50 || 0,
+                rsi_14: nextTrade.rsi_14 || 0,
+                macd_histogram: nextTrade.macd_histogram || 0,
                 precomputed_result: nextTrade.result,
                 precomputed_pnl: nextTrade.pnl,
                 precomputed_stake: nextTrade.stake,
@@ -2703,10 +2782,11 @@
             botState = 'IN_TRADE';
             botNextPrecomputedIdx++;
 
+            const tradeCandle = allCandles[nextTrade.candle_index];
             const isCall = nextTrade.direction === 'CALL';
             const groqBadge = '📊';
             botActiveMarkers.push({
-                time: candle.timestamp,
+                time: tradeCandle.timestamp,
                 position: isCall ? 'belowBar' : 'aboveBar',
                 color: '#f59e0b',
                 shape: isCall ? 'arrowUp' : 'arrowDown',
@@ -2796,39 +2876,113 @@
 
         function updateBotTradesList() {
             const listEl = document.getElementById('botTradesList');
-            let html = '<table style="width:100%; border-collapse: collapse;">';
+            let html = '<table style="width:100%; border-collapse: collapse; font-size:10px;">';
             html += '<tr style="color: var(--text-secondary); border-bottom: 1px solid var(--border);">';
-            html += '<th style="padding:4px; text-align:left;">Hora</th>';
-            html += '<th style="padding:4px;">Dir</th>';
-            html += '<th style="padding:4px;">Conf</th>';
-            html += '<th style="padding:4px;">Src</th>';
-            html += '<th style="padding:4px;">Res</th>';
-            html += '<th style="padding:4px; text-align:right;">P&L</th>';
+            html += '<th style="padding:3px 2px; text-align:left;">Hora</th>';
+            html += '<th style="padding:3px 2px;">Dir</th>';
+            html += '<th style="padding:3px 2px;">Precio</th>';
+            html += '<th style="padding:3px 2px;">E9</th>';
+            html += '<th style="padding:3px 2px;">E21</th>';
+            html += '<th style="padding:3px 2px;">E50</th>';
+            html += '<th style="padding:3px 2px;">Res</th>';
+            html += '<th style="padding:3px 2px; text-align:right;">P&L</th>';
             html += '</tr>';
 
             botRevealedTrades.forEach(t => {
                 const time = t.time.includes('T') ? t.time.split('T')[1].substring(0, 5) : t.time.substring(11, 16);
                 const isWin = t.result === 'WIN';
                 const dirColor = t.direction === 'CALL' ? 'var(--green)' : 'var(--red)';
-                const srcIcon = t.ai_provider === 'openai' ? '🔵🤖' : t.ai_provider === 'claude' ? '🟣🧠' : t.ai_provider === 'gemini' ? '🟠✨' : t.groq_used ? '🟢🧠' : '📊';
-                const providerName = t.ai_provider === 'openai' ? 'OpenAI GPT-5.2' : t.ai_provider === 'claude' ? 'Claude Opus 4' : t.ai_provider === 'gemini' ? 'Gemini 2.5 Flash' : t.groq_used ? 'Groq Llama 70B' : 'Layer 1 only';
-                const tip = t.groq_reasoning || t.reasoning || '';
+                const price = t.entry_price ? t.entry_price.toFixed(1) : '—';
+                const e9 = t.ema_9 ? t.ema_9.toFixed(1) : '—';
+                const e21 = t.ema_21 ? t.ema_21.toFixed(1) : '—';
+                const e50 = t.ema_50 ? t.ema_50.toFixed(1) : '—';
+                // Color: green if price > EMA, red if below
+                const pe9c = t.entry_price > t.ema_9 ? '#10b981' : '#f38ba8';
+                const pe21c = t.entry_price > t.ema_21 ? '#f59e0b' : '#f38ba8';
+                const pe50c = t.entry_price > t.ema_50 ? '#3b82f6' : '#f38ba8';
+                const tip = (t.groq_reasoning || t.reasoning || '').replace(/"/g, '&quot;');
 
-                html += `<tr style="border-bottom: 1px solid rgba(255,255,255,0.05);" title="${tip.replace(/"/g, '&quot;')}">`;
-                html += `<td style="padding:3px 4px; color: var(--text-secondary);">${time}</td>`;
-                html += `<td style="padding:3px 4px; color: ${dirColor}; text-align:center; font-weight:bold;">${t.direction}</td>`;
-                html += `<td style="padding:3px 4px; text-align:center;">${(t.confidence * 100).toFixed(0)}%</td>`;
-                html += `<td style="padding:3px 4px; text-align:center;" title="${providerName}">${srcIcon}</td>`;
-                html += `<td style="padding:3px 4px; text-align:center;">${isWin ? '✅' : '❌'}</td>`;
-                html += `<td style="padding:3px 4px; text-align:right; color: ${isWin ? 'var(--green)' : 'var(--red)'}; font-weight:bold;">${isWin ? '+' : ''}${t.pnl.toFixed(0)}</td>`;
+                html += `<tr style="border-bottom: 1px solid rgba(255,255,255,0.05);" title="${tip}">`;
+                html += `<td style="padding:2px; color: var(--text-secondary);">${time}</td>`;
+                html += `<td style="padding:2px; color: ${dirColor}; text-align:center; font-weight:bold;">${t.direction}</td>`;
+                html += `<td style="padding:2px; text-align:center; color:#cdd6f4; font-weight:bold;">${price}</td>`;
+                html += `<td style="padding:2px; text-align:center; color:${pe9c};">${e9}</td>`;
+                html += `<td style="padding:2px; text-align:center; color:${pe21c};">${e21}</td>`;
+                html += `<td style="padding:2px; text-align:center; color:${pe50c};">${e50}</td>`;
+                html += `<td style="padding:2px; text-align:center;">${isWin ? '✅' : '❌'}</td>`;
+                html += `<td style="padding:2px; text-align:right; color: ${isWin ? 'var(--green)' : 'var(--red)'}; font-weight:bold;">${isWin ? '+' : ''}${t.pnl.toFixed(0)}</td>`;
                 html += `</tr>`;
             });
 
             html += '</table>';
             listEl.innerHTML = html;
             listEl.scrollTop = listEl.scrollHeight;
+
+            // Also update the full-width table below chart
+            updateTradeDetailsTable();
         }
 
+        function updateTradeDetailsTable() {
+            const section = document.getElementById('tradeDetailsSection');
+            const tbody = document.getElementById('tradeDetailsBody');
+            const countEl = document.getElementById('tradeDetailsCount');
+            if (!section || !tbody) return;
+
+            if (botRevealedTrades.length === 0) {
+                section.style.display = 'none';
+                return;
+            }
+
+            section.style.display = 'block';
+            const wins = botRevealedTrades.filter(t => t.result === 'WIN').length;
+            const total = botRevealedTrades.length;
+            const wr = total > 0 ? (wins / total * 100).toFixed(1) : '0';
+            countEl.textContent = `${total} trades — WR: ${wr}% — ${wins}W / ${total - wins}L`;
+
+            let html = '';
+            botRevealedTrades.forEach((t, idx) => {
+                const time = t.time.includes('T') ? t.time.split('T')[1].substring(0, 5) : t.time.substring(11, 16);
+                const isWin = t.result === 'WIN';
+                const dirColor = t.direction === 'CALL' ? '#a6e3a1' : '#f38ba8';
+                const price = t.entry_price ? t.entry_price.toFixed(1) : '—';
+                const e9 = t.ema_9 ? t.ema_9.toFixed(1) : '—';
+                const e21 = t.ema_21 ? t.ema_21.toFixed(1) : '—';
+                const e50 = t.ema_50 ? t.ema_50.toFixed(1) : '—';
+                const rsi = t.rsi_14 ? t.rsi_14.toFixed(0) : '—';
+                const macd = t.macd_histogram !== undefined ? t.macd_histogram.toFixed(3) : '—';
+                const hurst = t.hurst ? t.hurst.toFixed(3) : '—';
+                const conf = t.confidence ? (t.confidence * 100).toFixed(0) + '%' : '—';
+                const bal = t.balance_after ? '$' + t.balance_after.toFixed(0) : '—';
+
+                const aboveE9 = t.entry_price > t.ema_9;
+                const aboveE21 = t.entry_price > t.ema_21;
+                const aboveE50 = t.entry_price > t.ema_50;
+
+                const rowBg = idx % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent';
+
+                html += `<tr style="border-bottom:1px solid rgba(255,255,255,0.05); background:${rowBg};">`;
+                html += `<td style="padding:4px 8px; color:#585b70;">${idx + 1}</td>`;
+                html += `<td style="padding:4px 8px; color:#cdd6f4;">${time}</td>`;
+                html += `<td style="padding:4px 8px; color:${dirColor}; text-align:center; font-weight:bold;">${t.direction}</td>`;
+                html += `<td style="padding:4px 8px; text-align:center; color:#cdd6f4; font-weight:bold;">${price}</td>`;
+                html += `<td style="padding:4px 8px; text-align:center; color:#10b981;">${e9}</td>`;
+                html += `<td style="padding:4px 8px; text-align:center; color:#f59e0b;">${e21}</td>`;
+                html += `<td style="padding:4px 8px; text-align:center; color:#3b82f6;">${e50}</td>`;
+                html += `<td style="padding:4px 8px; text-align:center;">${aboveE9 ? '<span style="color:#10b981;">✅</span>' : '<span style="color:#f38ba8;">❌</span>'}</td>`;
+                html += `<td style="padding:4px 8px; text-align:center;">${aboveE21 ? '<span style="color:#f59e0b;">✅</span>' : '<span style="color:#f38ba8;">❌</span>'}</td>`;
+                html += `<td style="padding:4px 8px; text-align:center;">${aboveE50 ? '<span style="color:#3b82f6;">✅</span>' : '<span style="color:#f38ba8;">❌</span>'}</td>`;
+                html += `<td style="padding:4px 8px; text-align:center; color:${t.rsi_14 > 70 ? '#f38ba8' : t.rsi_14 > 50 ? '#a6e3a1' : '#f9e2af'};">${rsi}</td>`;
+                html += `<td style="padding:4px 8px; text-align:center; color:${t.macd_histogram > 0 ? '#a6e3a1' : '#f38ba8'};">${macd}</td>`;
+                html += `<td style="padding:4px 8px; text-align:center; color:#89b4fa;">${hurst}</td>`;
+                html += `<td style="padding:4px 8px; text-align:center;">${conf}</td>`;
+                html += `<td style="padding:4px 8px; text-align:center;">${isWin ? '✅' : '❌'}</td>`;
+                html += `<td style="padding:4px 8px; text-align:right; color:${isWin ? '#a6e3a1' : '#f38ba8'}; font-weight:bold;">${isWin ? '+' : ''}${t.pnl.toFixed(0)}</td>`;
+                html += `<td style="padding:4px 8px; text-align:right; color:#cdd6f4;">${bal}</td>`;
+                html += `</tr>`;
+            });
+
+            tbody.innerHTML = html;
+        }
 
         // ============================================
         // ENGINE BATTLE — 4 engines in parallel
@@ -2903,13 +3057,12 @@
 
                 // Render per-engine progress bars
                 const engineColors = {
-                    'original_v1': '#6366f1',
-                    'university_v2': '#10b981',
-                    'bullish_v3': '#60a5fa',
-                    'bullish_v4': '#3b82f6',
-                    'bullish_v5': '#2563eb',
-                    'reversal_v5': '#a855f7',
-                    'bearish_v6': '#a855f7',
+                    'bullish_v5': '#fbbf24',
+
+
+                    'bear_reject_v1': '#dc2626',
+                    'bull_soldiers_v1': '#16a34a',
+                    'malicia_v1': '#a855f7',
                 };
 
                 let html = '';

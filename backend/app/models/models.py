@@ -79,6 +79,13 @@ class Candle(Base):
     garch_volatility_forecast = Column(Numeric(12, 8))
     regime = Column(String(30))
     
+    # Adaptive Trend Flow (ATF)
+    atf_basis = Column(Numeric(12, 8))
+    atf_upper = Column(Numeric(12, 8))
+    atf_lower = Column(Numeric(12, 8))
+    atf_trend = Column(Integer, default=0)  # +1=bullish, -1=bearish, 0=neutral
+    atf_slope = Column(Numeric(12, 8))
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

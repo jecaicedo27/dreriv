@@ -173,6 +173,15 @@ class ReplayBotSimulator:
         from app.analysis.engine_registry import get_engine
         engine = get_engine(self.engine_name)
 
+        # === ENGINE is source of truth for timing ===
+        # Read DURATION_CANDLES and COOLDOWN_CANDLES from engine class (overrides config)
+        if hasattr(engine, 'DURATION_CANDLES'):
+            self.trade_duration_candles = engine.DURATION_CANDLES
+        if hasattr(engine, 'COOLDOWN_CANDLES'):
+            self.cooldown_candles = engine.COOLDOWN_CANDLES
+        allow_overlap = getattr(engine, 'ALLOW_OVERLAP', False)
+        logger.info(f"⏱️ Engine timing: duration={self.trade_duration_candles}, cooldown={self.cooldown_candles}, overlap={'ON' if allow_overlap else 'OFF'}")
+
         # Direction-aware consecutive loss tracking (matches frontend exactly)
         consec_losses_same_dir = 0
         last_loss_dir = None
@@ -325,7 +334,7 @@ class ReplayBotSimulator:
                         "candle_index": i - lookback_count,
                         "exit_candle_index": exit_idx - lookback_count,
                         "time": (entry_candle['open_time'] - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
-                        "timestamp": int(entry_candle['open_time'].timestamp()),
+                        "timestamp": int(entry_candle['open_time'].timestamp()) - 5 * 3600,  # UTC-5 (Colombia) — must match chart candle timestamps
                         "direction": final_signal,
                         "stake": round(stake, 2),
                         "entry_price": round(entry_price, 2),
@@ -340,19 +349,25 @@ class ReplayBotSimulator:
                         "l1_confidence": result["l1_confidence"],
                         "reasoning": result["reasoning"][:200],
                         "groq_reasoning": result["groq_reasoning"][:300] if result["groq_used"] else "",
-                        # Technical indicators at entry
-                        "hurst": result.get("hurst", 0),
-                        "rsi_14": result.get("rsi_14", 0),
-                        "ema_9": result.get("ema_9", 0),
-                        "ema_21": result.get("ema_21", 0),
-                        "macd_histogram": result.get("macd_histogram", 0),
-                        "bb_width": result.get("bb_width", 0),
+                        # Technical indicators at entry — read from candle data (backend DB values)
+                        "hurst": float(entry_candle.get('hurst_exponent', 0) or 0),
+                        "rsi_14": float(entry_candle.get('rsi_14', 0) or 0),
+                        "ema_9": float(entry_candle.get('ema_9', 0) or 0),
+                        "ema_21": float(entry_candle.get('ema_21', 0) or 0),
+                        "ema_50": float(entry_candle.get('ema_50', 0) or 0),
+                        "macd_histogram": float(entry_candle.get('macd_histogram', 0) or 0),
+                        "bb_width": float(entry_candle.get('bollinger_upper', 0) or 0) - float(entry_candle.get('bollinger_lower', 0) or 0),
                     }
                     trades.append(trade)
                     equity_curve.append({"index": i, "balance": round(balance, 2)})
 
-                    # Set post-trade cooldown (exit_index + 3, same as frontend BOT_COOLDOWN)
-                    cooldown_until = exit_idx + self.cooldown_candles
+                    # Set cooldown — ENGINE decides if overlap is allowed
+                    if allow_overlap:
+                        # Cooldown from ENTRY: can open new trade while this one is still running
+                        cooldown_until = i + self.cooldown_candles
+                    else:
+                        # Cooldown from EXIT: must wait for trade to close
+                        cooldown_until = exit_idx + self.cooldown_candles
 
             except Exception as e:
                 continue

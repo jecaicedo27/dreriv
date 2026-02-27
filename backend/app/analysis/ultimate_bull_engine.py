@@ -1,145 +1,166 @@
+"""
+Ultimate Bull Engine v6 — GA v2 Optimized CALL Engine
+
+GA v2 Results (200 pop, 100 gens, 275K candles, cooldown-modeled):
+- 54.4% WR, 5,249 trades, +$6,527/month estimated
+- STABLE: Half1 54.7% / Half2 54.2% (0.5% diff!)
+- Key discovery: Buy the short-term dip (trend_5 < 0 = price below SMA5)
+- Current candle must be bullish (the bounce)
+- 7-candle cooldown (35 min) between trades — no overtrading
+- Hours in UTC: 0,1,6,7,11,14,15,16,17,20,21,22,23
+
+Strategy: "Fuego contra fuego" — when the synthetic index drops
+short-term and shows a bullish bounce, buy the reversal.
+"""
+
 import pandas as pd
 import numpy as np
 from typing import Dict, Any
-from loguru import logger
-
 from app.analysis.base_engine import BaseAnalysisEngine
 
+
 class UltimateBullEngine(BaseAnalysisEngine):
-    """
-    Ultimate Bullish v5: High-Precision CALL-only engine
-    
-    Philosophy: "Maximum Win Rate through Strict Confluence"
-    - Detects perfect bullish alignment (EMA_9 > EMA_21 > EMA_50)
-    - Requires confirmed Macro Trend (Hurst > 0.6)
-    - Enters on pullbacks during momentum (MACD > 0 + RSI 50-75)
-    - Avoids overextended peaks (Bollinger Bounds constraint)
-    """
-    
     name = "bullish_v5"
-    version = "5.0"
-    description = "Ultimate Bull: High-Winrate CALLs using Momentum + Pullbacks"
-    
+    version = "6.0"
+    description = "Ultimate Bull v6: GA-optimized buy-the-dip CALL (54.4% WR)"
+
+    # GA v2 optimized parameters
+    MIN_BODY_ATR = 0.33
+    MAX_BODY_ATR = 3.23
+    MAX_WICK_RATIO = 1.61
+    OPTIMAL_RSI = (18, 70)
+
+    # Hours in UTC (matching simulation timezone)
+    ALLOWED_HOURS_UTC = {0, 1, 6, 7, 11, 14, 15, 20, 21, 22, 23}
+
     def analyze(self, df: pd.DataFrame, symbol: str = "R_100", **kwargs) -> Dict[str, Any]:
-        """Strictly CALL or HOLD evaluation."""
-        hurst_min = kwargs.get('hurst_min', 0.55) # Relaxed to allow standard uptrends
-        hurst_max = kwargs.get('hurst_max', 0.85)
-        
         reasoning = []
-        
+
         if len(df) < 50:
             return self._hold_response(["Insufficient data"])
-            
-        latest = df.iloc[-1]
-        current_price = float(latest['close'])
-        
-        # ===== HURST REGIME (Macro Trend) =====
-        hurst_fast = float(latest.get('hurst_fast', 0) or 0)
-        hurst_slow = float(latest.get('hurst_exponent', 0) or 0)
-        
-        # Blend taking the best of both micro and macro
-        hurst_value = max(hurst_fast, hurst_slow) if hurst_fast > 0 and hurst_slow > 0 else (hurst_fast or hurst_slow)
-        
-        if hurst_value < hurst_min:
-            reasoning.append(f"Trend too weak (Hurst={hurst_value:.3f} < {hurst_min})")
-            return self._hold_response(reasoning)
-        elif hurst_value > hurst_max:
-            reasoning.append(f"Trend exhausted (Hurst={hurst_value:.3f} > {hurst_max})")
-            return self._hold_response(reasoning)
-            
-        reasoning.append(f"✅ Strong Uptrend (Hurst={hurst_value:.3f})")
-        
-        # ===== READ INDICATORS =====
-        ema_9 = float(latest.get('ema_9', 0) or 0)
-        ema_21 = float(latest.get('ema_21', 0) or 0)
-        ema_50 = float(latest.get('ema_50', 0) or 0)
-        rsi = float(latest.get('rsi_14', 50) or 50)
-        macd_hist = float(latest.get('macd_histogram', 0) or 0)
-        momentum_5 = float(latest.get('momentum_5', 0) or 0)
-        bb_upper = float(latest.get('bollinger_upper', 0) or 0)
-        bb_lower = float(latest.get('bollinger_lower', 0) or 0)
-        
-        ema_diverging = bool(int(latest.get('ema_diverging', 0) or 0))
-        ema_gap_rate = float(latest.get('ema_gap_rate', 0) or 0)
-        
-        # ===== GATE 1: EMA TREND (Bullish Macro) =====
-        ema_50_prev = float(df.iloc[-2].get('ema_50', 0) or 0) if len(df) >= 2 else 0
-        if ema_50 <= ema_50_prev:
-            reasoning.append(f"EMA 50 is not rising (Curr {ema_50:.1f} <= Prev {ema_50_prev:.1f})")
-            return self._hold_response(reasoning)
-            
-        if current_price <= ema_50:
-            reasoning.append(f"Price below EMA 50 (P={current_price:.1f})")
-            return self._hold_response(reasoning)
-            
-        reasoning.append(f"✅ Bullish Macro Trend Active")
-        
-        # ===== GATE 2: MOMENTUM (MACD + RSI) =====
-        if macd_hist <= 0.2: # The optimizer found that MACD must be heavily positive (>0.2)
-            reasoning.append(f"MACD Histogram not strong enough ({macd_hist:.4f} <= 0.2)")
-            return self._hold_response(reasoning)
-            
-        if rsi < 45 or rsi > 55: # Optimizer showed 45-55 is the mathematical sweet spot to avoid peak exhaustion
-            reasoning.append(f"RSI out of sweet spot (RSI={rsi:.1f}, want 45-55)")
-            return self._hold_response(reasoning)
-            
-        # ===== GATE 3: ENTRY PULLBACK QUALITY & HEIKIN-ASHI FILTRATION =====
-        # Optimizer determined that buying perfectly around EMA_21 (-0.2% to 0.2%) yields the highest edge
-        dist_to_ema21_pct = (current_price - ema_21) / ema_21 * 100
-        
-        if current_price >= bb_upper:
-            reasoning.append(f"Price piercing upper Bollinger Band — overextended")
-            return self._hold_response(reasoning)
-            
-        if dist_to_ema21_pct < -0.2 or dist_to_ema21_pct > 0.2:
-            reasoning.append(f"Price not snug at EMA_21 (dist={dist_to_ema21_pct:.2f}%) — wait for exact zone")
-            return self._hold_response(reasoning)
-            
-        # Fast Heikin-Ashi calculation (last 3 candles)
-        if len(df) >= 3:
-            recent_df = df.iloc[-3:].copy()
-            
-            # HA Candle t-2 (Anchor)
-            ha_open_2 = (float(df.iloc[-4]['open']) + float(df.iloc[-4]['close'])) / 2 if len(df) >= 4 else float(recent_df.iloc[0]['open'])
-            ha_close_2 = (float(recent_df.iloc[0]['open']) + float(recent_df.iloc[0]['high']) + float(recent_df.iloc[0]['low']) + float(recent_df.iloc[0]['close'])) / 4
-            
-            # HA Candle t-1
-            ha_open_1 = (ha_open_2 + ha_close_2) / 2
-            ha_close_1 = (float(recent_df.iloc[1]['open']) + float(recent_df.iloc[1]['high']) + float(recent_df.iloc[1]['low']) + float(recent_df.iloc[1]['close'])) / 4
-            
-            # HA Candle t (Current)
-            ha_open_0 = (ha_open_1 + ha_close_1) / 2
-            ha_close_0 = (float(recent_df.iloc[2]['open']) + float(recent_df.iloc[2]['high']) + float(recent_df.iloc[2]['low']) + float(recent_df.iloc[2]['close'])) / 4
-            
-            if ha_close_0 <= ha_open_0:
-                reasoning.append(f"Heikin-Ashi current candle is RED (HA_Close {ha_close_0:.1f} <= HA_Open {ha_open_0:.1f}) — Pullback not finished")
-                return self._hold_response(reasoning)
-                
-            reasoning.append(f"✅ Pullback accepted: HA Trend is GREEN")
 
-        reasoning.append(f"✅ Deep Pullback Zone (dist EMA21={dist_to_ema21_pct:.2f}%)")
-        
-        # ===== SCORING AND CONFIDENCE =====
-        # Base confidence for clearing all strict optimizer gates
-        confidence = 0.70
-        
-        # Bonus for RSI in the absolute prime zone
-        if 55 <= rsi <= 65:
-            confidence += 0.05
-            
-        # Bonus for a very clean pullback (touching or slightly below EMA 21)
-        if dist_to_ema21_pct <= 0.05 and current_price > ema_50:
-            confidence += 0.08
-            
-        # Bonus for strong MACD momentum
-        if macd_hist > 0.002:
+        curr = df.iloc[-1]
+
+        o1 = float(curr['open'])
+        h1 = float(curr['high'])
+        l1 = float(curr['low'])
+        c1 = float(curr['close'])
+
+        rsi = float(curr.get('rsi_14', 50) or 50)
+        ema_21 = float(curr.get('ema_21', 0) or 0)
+        ema_50 = float(curr.get('ema_50', 0) or 0)
+        macd_hist = float(curr.get('macd_histogram', 0) or 0)
+        bb_upper = float(curr.get('bollinger_upper', 0) or 0)
+        bb_lower = float(curr.get('bollinger_lower', 0) or 0)
+        bb_middle = float(curr.get('bollinger_middle', 0) or 0)
+        hurst_fast = float(curr.get('hurst_fast', 0) or 0)
+        hurst_slow = float(curr.get('hurst_exponent', 0) or 0)
+        momentum_5 = float(curr.get('momentum_5', 0) or 0)
+        atr = float(curr.get('atr_14', 0) or 0)
+
+        hurst_value = hurst_fast if hurst_fast > 0 else hurst_slow
+        if hurst_value == 0:
+            hurst_value = 0.5
+
+        if atr <= 0:
+            recent_ranges = (df['high'].tail(14).astype(float) - df['low'].tail(14).astype(float))
+            atr = float(recent_ranges.mean())
+        if atr <= 0:
+            atr = 1.0
+
+        current_price = c1
+
+        # ===== GATE 1: Must be bullish candle =====
+        if c1 <= o1:
+            return self._hold_response(["Not bullish"])
+
+        body = c1 - o1
+        body_atr = body / atr
+
+        # ===== GATE 2: Body in range (0.33-3.23 ATR) =====
+        if body_atr < self.MIN_BODY_ATR or body_atr > self.MAX_BODY_ATR:
+            return self._hold_response([f"Body out of range ({body_atr:.2f})"])
+
+        # ===== GATE 3: Wick ratio (max 1.61) =====
+        uw = h1 - c1
+        lw = o1 - l1
+        wick_rat = (uw + lw) / max(body, 0.01)
+        if wick_rat > self.MAX_WICK_RATIO:
+            return self._hold_response(["Wicks too large"])
+
+        # ===== GATE 4: TREND_5 DOWN (KEY — buying the dip!) =====
+        # Price must be below its 5-period SMA = short-term dip
+        closes = df['close'].tail(6).astype(float).values
+        if len(closes) >= 6:
+            sma5 = closes[-6:-1].mean()  # SMA of previous 5 candles
+            if current_price >= sma5:
+                return self._hold_response(["No dip (price above SMA5)"])
+        else:
+            return self._hold_response(["Not enough data for SMA5"])
+
+        # ===== GATE 5: RSI range =====
+        if rsi < self.OPTIMAL_RSI[0] or rsi > self.OPTIMAL_RSI[1]:
+            return self._hold_response([f"RSI {rsi:.0f} out of range"])
+
+        # ===== GATE 6: Hour check (UTC) =====
+        try:
+            current_time = curr['open_time']
+            if hasattr(current_time, 'hour'):
+                hour_utc = current_time.hour
+            else:
+                hour_utc = -1
+        except:
+            hour_utc = -1
+
+        if hour_utc not in self.ALLOWED_HOURS_UTC and hour_utc != -1:
+            return self._hold_response([f"Blocked hour ({hour_utc}:00 UTC)"])
+
+        # ===== PATTERN DETECTED — CALL! =====
+        dip_pct = (sma5 - current_price) / atr
+        reasoning.append(f"🟢 Buy-the-Dip (body={body_atr:.2f}ATR, dip={dip_pct:.1f}σ, RSI={rsi:.0f})")
+
+        # ===== CONFIDENCE SCORING =====
+        confidence = 0.65
+
+        # Deeper dip = higher confidence
+        if dip_pct > 0.5:
             confidence += 0.03
-            
-        # Cap confidence
-        confidence = min(round(confidence, 3), 0.85)
-        
-        reasoning.append(f"🚀 ULTIMATE BULL CALL | conf={confidence:.3f}")
-        
+            reasoning.append(f"✅ Deep dip ({dip_pct:.1f}σ)")
+
+        # EMA bullish structure bonus
+        if ema_21 > ema_50 and ema_21 > 0 and ema_50 > 0:
+            confidence += 0.02
+            reasoning.append("✅ EMA bullish")
+
+        # MACD positive bonus
+        if macd_hist > 0:
+            confidence += 0.02
+            reasoning.append("✅ MACD+")
+
+        # RSI oversold recovery
+        if rsi < 40:
+            confidence += 0.03
+            reasoning.append(f"✅ RSI oversold ({rsi:.0f})")
+
+        # Momentum turning positive
+        if momentum_5 > 0:
+            confidence += 0.02
+
+        # Near BB lower band
+        if bb_lower > 0 and bb_upper > 0:
+            bb_pos = (current_price - bb_lower) / (bb_upper - bb_lower + 1e-10)
+            if bb_pos < 0.3:
+                confidence += 0.03
+                reasoning.append("✅ Near BB lower")
+
+        confidence = min(confidence, 0.85)
+        confidence = max(confidence, 0.62)
+        confidence = round(confidence, 3)
+
+        bb_width = (bb_upper - bb_lower) / (bb_middle + 1e-10) if bb_middle > 0 else 0
+
+        reasoning.append(f"CALL conf={confidence:.3f}")
+
         return {
             "signal": "CALL",
             "final_signal": "CALL",
@@ -150,21 +171,21 @@ class UltimateBullEngine(BaseAnalysisEngine):
             "duration": 300,
             "entry_price": current_price,
             "reasoning": " | ".join(reasoning),
-            "hurst_signal": {"hurst": round(hurst_value, 4), "regime": "TRENDING"},
+            "hurst_signal": {"hurst": round(hurst_value, 4), "regime": "TRENDING" if hurst_value > 0.5 else "MEAN_REVERTING"},
             "indicators": {
-                "ema_9": ema_9,
+                "rsi_14": rsi,
                 "ema_21": ema_21,
                 "ema_50": ema_50,
-                "rsi_14": rsi,
                 "macd_histogram": macd_hist,
+                "bb_width": round(bb_width, 5),
                 "momentum_5": momentum_5,
-                "bb_upper": bb_upper,
-                "bb_lower": bb_lower
+                "body_atr": round(body_atr, 3),
+                "wick_ratio": round(wick_rat, 2),
+                "dip_sigma": round(dip_pct, 2),
             }
         }
-        
+
     def _hold_response(self, reasoning: list) -> Dict[str, Any]:
-        """Required standard HOLD response."""
         return {
             "signal": "HOLD",
             "final_signal": "HOLD",

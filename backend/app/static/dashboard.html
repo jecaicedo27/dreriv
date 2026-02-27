@@ -285,18 +285,38 @@
                     style="display: none; border-color: #fbbf24; color: #fbbf24; background: rgba(251, 191, 36, 0.1);">Checking...</span>
                 <span id="statusBadge" class="status-badge status-running">● LOADING...</span>
                 <div style="display: flex; align-items: center; gap: 6px;">
-                    <span style="font-size: 12px; color: #a6adc8;">🧠 Motor:</span>
-                    <select id="engineSelector"
-                        style="background: rgba(139, 92, 246, 0.2); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.5); border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'Inter', sans-serif;"
-                        onchange="switchEngine(this.value)">
-                        <option value="original_v1">🧠 Original v1</option>
-                        <option value="university_v2">🎓 University v2</option>
-                        <option value="bullish_v3">🐂 Bullish v3</option>
-                        <option value="bullish_v4">🐂 Bullish v4</option>
-                        <option value="bullish_v5">🐂 Ultimate Bull v5</option>
-                        <option value="reversal_v5">🎯 Reversal v5</option>
-                        <option value="bearish_v6">🐻 Bearish v6</option>
-                    </select>
+                    <span style="font-size: 12px; color: #a6adc8;">🧠 Motores:</span>
+                    <div id="engineToggles" style="display: flex; gap: 6px; flex-wrap: wrap;">
+                        <label class="engine-toggle" data-engine="bear_reject_v1"
+                            style="display: flex; align-items: center; gap: 4px; cursor: pointer; padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(220, 38, 38, 0.5); background: rgba(220, 38, 38, 0.1); font-size: 12px; font-weight: 600; transition: all 0.3s;">
+                            <input type="checkbox" class="engine-check" value="bear_reject_v1" style="display: none;"
+                                checked>
+                            <span class="toggle-dot"
+                                style="width: 10px; height: 10px; border-radius: 50%; background: #dc2626; display: inline-block; transition: all 0.3s;"></span>
+                            <span style="color: #fca5a5;">🔴 Red Crows</span>
+                        </label>
+                        <label class="engine-toggle" data-engine="bullish_v5"
+                            style="display: flex; align-items: center; gap: 4px; cursor: pointer; padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(251, 191, 36, 0.5); background: rgba(251, 191, 36, 0.1); font-size: 12px; font-weight: 600; transition: all 0.3s;">
+                            <input type="checkbox" class="engine-check" value="bullish_v5" style="display: none;">
+                            <span class="toggle-dot"
+                                style="width: 10px; height: 10px; border-radius: 50%; background: #666; display: inline-block; transition: all 0.3s;"></span>
+                            <span style="color: #fde68a;">🐂 Bull v6</span>
+                        </label>
+                        <label class="engine-toggle" data-engine="bull_soldiers_v1"
+                            style="display: flex; align-items: center; gap: 4px; cursor: pointer; padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(22, 163, 74, 0.5); background: rgba(22, 163, 74, 0.1); font-size: 12px; font-weight: 600; transition: all 0.3s;">
+                            <input type="checkbox" class="engine-check" value="bull_soldiers_v1" style="display: none;">
+                            <span class="toggle-dot"
+                                style="width: 10px; height: 10px; border-radius: 50%; background: #666; display: inline-block; transition: all 0.3s;"></span>
+                            <span style="color: #86efac;">🟢 Soldiers</span>
+                        </label>
+                        <label class="engine-toggle" data-engine="malicia_v1"
+                            style="display: flex; align-items: center; gap: 4px; cursor: pointer; padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(168, 85, 247, 0.5); background: rgba(168, 85, 247, 0.1); font-size: 12px; font-weight: 600; transition: all 0.3s;">
+                            <input type="checkbox" class="engine-check" value="malicia_v1" style="display: none;">
+                            <span class="toggle-dot"
+                                style="width: 10px; height: 10px; border-radius: 50%; background: #666; display: inline-block; transition: all 0.3s;"></span>
+                            <span style="color: #d8b4fe;">🦊 Malicia</span>
+                        </label>
+                    </div>
                 </div>
             </div>
 
@@ -374,6 +394,28 @@
                     </div>
                     <div id="reasoningUpdated"
                         style="margin-top: 4px; font-size: 11px; color: #888; text-align: right;">⏱ --:--:--</div>
+                </div>
+
+                <!-- Multi-Engine Decision Table -->
+                <div class="card" style="padding: 8px 10px; grid-column: 1 / -1;">
+                    <h3 style="margin-top: 0; color: #c084fc; font-size: 1rem;">⚡ Decisiones de Motores en Tiempo Real
+                    </h3>
+                    <table id="engineDecisionTable" style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid #333;">
+                                <th style="text-align: left; padding: 6px; color: #a6adc8;">Motor</th>
+                                <th style="text-align: center; padding: 6px; color: #a6adc8;">Señal</th>
+                                <th style="text-align: center; padding: 6px; color: #a6adc8;">Conf.</th>
+                                <th style="text-align: left; padding: 6px; color: #a6adc8;">Reasoning</th>
+                            </tr>
+                        </thead>
+                        <tbody id="engineDecisionBody">
+                            <tr>
+                                <td colspan="4" style="padding:10px;color:#666;text-align:center;">Esperando datos del
+                                    bot...</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </header>
@@ -628,9 +670,12 @@
             const resizeCharts = () => {
                 if (!_allChartsReady) return;
                 try {
-                    chart.applyOptions({ width: container.clientWidth });
-                    if (window.hurstChart) window.hurstChart.applyOptions({ width: document.getElementById('hurstChartContainer').clientWidth });
-                    if (window.confidenceChart) window.confidenceChart.applyOptions({ width: document.getElementById('confidenceChartContainer').clientWidth });
+                    const w = container.clientWidth;
+                    if (w > 0) chart.applyOptions({ width: w });
+                    const hw = document.getElementById('hurstChartContainer').clientWidth;
+                    if (window.hurstChart && hw > 0) window.hurstChart.applyOptions({ width: hw });
+                    const cw = document.getElementById('confidenceChartContainer').clientWidth;
+                    if (window.confidenceChart && cw > 0) window.confidenceChart.applyOptions({ width: cw });
                 } catch (e) { }
             };
             window.addEventListener('resize', resizeCharts);
@@ -939,6 +984,16 @@
         function logDebug(msg) {
             const el = document.getElementById('debugLog');
             if (el) el.innerHTML += '<br>' + new Date().toISOString().split('T')[1].split('.')[0] + ' ' + msg;
+        }
+
+        // Deduplicate array by `time` key — keeps last entry for each timestamp.
+        // Lightweight-charts v4 crashes with "Value is null" on duplicate timestamps.
+        function dedup(arr) {
+            const seen = new Map();
+            for (const item of arr) {
+                if (item.time != null) seen.set(item.time, item);
+            }
+            return Array.from(seen.values()).sort((a, b) => a.time - b.time);
         }
 
         async function fetchAndUpdateIndicators() {
@@ -1285,13 +1340,13 @@
                     return;
                 }
 
-                // Update Charts
-                if (window.ema21Series) window.ema21Series.setData(ema21Data);
-                if (window.ema50Series) window.ema50Series.setData(ema50Data);
-                if (window.bbUpperSeries) window.bbUpperSeries.setData(bbUpperData);
-                if (window.bbLowerSeries) window.bbLowerSeries.setData(bbLowerData);
-                if (window.hurstLineSeries) window.hurstLineSeries.setData(hurstData);
-                if (window.hurstFastLineSeries) window.hurstFastLineSeries.setData(hurstFastData);
+                // Update Charts (dedup to prevent lightweight-charts crash on duplicate timestamps)
+                if (window.ema21Series) window.ema21Series.setData(dedup(ema21Data));
+                if (window.ema50Series) window.ema50Series.setData(dedup(ema50Data));
+                if (window.bbUpperSeries) window.bbUpperSeries.setData(dedup(bbUpperData));
+                if (window.bbLowerSeries) window.bbLowerSeries.setData(dedup(bbLowerData));
+                if (window.hurstLineSeries) window.hurstLineSeries.setData(dedup(hurstData));
+                if (window.hurstFastLineSeries) window.hurstFastLineSeries.setData(dedup(hurstFastData));
 
                 // Populate regime bands using hurst timestamps
                 if (hurstData.length > 0) {
@@ -1424,8 +1479,10 @@
                     return;
                 }
 
-                // 1. Set candle data
-                const candlesCOL = candles.map(c => ({ ...c, time: c.time - 18000 }));
+                // 1. Set candle data (filter out any nulls, dedup timestamps to avoid lightweight-charts crash)
+                const candlesCOL = dedup(candles
+                    .filter(c => c.open != null && c.high != null && c.low != null && c.close != null && c.time != null)
+                    .map(c => ({ ...c, time: c.time - 18000 })));
                 candleSeries.setData(candlesCOL);
                 _lastCandleData = [];
                 if (window.markerOverlay) {
@@ -1464,9 +1521,14 @@
 
                     if (analysisData.length > 0) {
                         // Hurst lines
-                        const hurstLineData = analysisData.map(d => ({ time: d.time - 18000, value: d.hurst }));
+                        const hurstLineData = analysisData
+                            .filter(d => d.hurst != null && d.time != null)
+                            .map(d => ({ time: d.time - 18000, value: d.hurst }));
                         if (window.hurstLineSeries) window.hurstLineSeries.setData(hurstLineData);
-                        const hurstFastLineData = analysisData.map(d => ({ time: d.time - 18000, value: d.hurst_fast || d.hurst }));
+                        // Use != null (not ||) to avoid JS treating 0.0 as falsy
+                        const hurstFastLineData = analysisData
+                            .filter(d => d.time != null)
+                            .map(d => ({ time: d.time - 18000, value: d.hurst_fast != null ? d.hurst_fast : d.hurst }));
                         if (window.hurstFastLineSeries) window.hurstFastLineSeries.setData(hurstFastLineData);
 
                         // Hurst reference bands (all with safe checks)
@@ -1515,7 +1577,7 @@
                                 return {
                                     time,
                                     position: t.direction === 'CALL' ? 'belowBar' : 'aboveBar',
-                                    color: t.direction === 'CALL' ? '#00ff88' : '#ff4444',
+                                    color: t.outcome === 'WIN' ? '#00ff88' : t.outcome === 'LOSS' ? '#ff4444' : '#fbbf24',
                                     shape: t.direction === 'CALL' ? 'arrowUp' : 'arrowDown',
                                     text: `${t.direction} $${(t.pnl || 0).toFixed(2)}`,
                                     size: 2,
@@ -1558,8 +1620,12 @@
                 if (_historicalMode) return;
 
                 if (candles.length > 0) {
-                    // Shift candle times to Colombia (UTC-5)
-                    const candlesCOL = candles.map(c => ({ ...c, time: c.time - 18000 }));
+                    // Shift candle times to Colombia (UTC-5), filter nulls, dedup timestamps
+                    const candlesCOL = dedup(candles
+                        .filter(c => c.open != null && c.high != null && c.low != null && c.close != null && c.time != null)
+                        .map(c => ({ ...c, time: c.time - 18000 })));
+
+                    if (candlesCOL.length === 0) return;
 
                     if (_lastCandleData.length === 0) {
                         // First load: use setData
@@ -1570,17 +1636,17 @@
                         // This does NOT reset the viewport
                         const lastOldTime = _lastCandleData.length > 0 ? _lastCandleData[_lastCandleData.length - 1].time : 0;
                         for (const c of candlesCOL) {
-                            if (c.time >= lastOldTime) {
+                            if (c.time >= lastOldTime && c.open != null && c.high != null && c.low != null && c.close != null) {
                                 candleSeries.update(c);
                             }
                         }
                     }
                     _lastCandleData = candlesCOL;
-                    window._mainBarCount = candles.length;
+                    window._mainBarCount = candlesCOL.length;
 
                     // Feed overlay series with candle close prices (invisible line, for marker z-ordering)
                     if (window.markerOverlay) {
-                        window.markerOverlay.setData(candles.map(c => ({ time: c.time - 18000, value: c.close })));
+                        window.markerOverlay.setData(candlesCOL.filter(c => c.close != null).map(c => ({ time: c.time, value: c.close })));
                     }
 
                     // Fetch recent trades and add markers
@@ -1597,7 +1663,7 @@
                                     return {
                                         time,
                                         position: isCall ? 'belowBar' : 'aboveBar',
-                                        color: isCall ? '#00ff88' : '#ff4444',
+                                        color: t.outcome === 'WIN' ? '#00ff88' : t.outcome === 'LOSS' ? '#ff4444' : '#fbbf24',
                                         shape: isCall ? 'arrowUp' : 'arrowDown',
                                         text: `${t.direction} ${pnl}`,
                                         size: 2,
@@ -1812,27 +1878,139 @@
             }
         }
 
-        async function switchEngine(engineName) {
+        // ===== MULTI-ENGINE TOGGLE SYSTEM =====
+        async function loadActiveEngines() {
             try {
-                localStorage.setItem('selectedEngine', engineName);
-                localStorage.setItem('engineSwitchTime', Date.now().toString());
-                const sel = document.getElementById('engineSelector');
-                const origColor = sel.style.borderColor;
-                sel.style.borderColor = '#fbbf24';
-                const response = await fetch(`${API_BASE}/engine/${engineName}`, { method: 'POST' });
-                const result = await response.json();
-                if (result.status === 'ok') {
-                    sel.style.borderColor = '#10b981';
-                    setTimeout(() => { sel.style.borderColor = origColor; }, 2000);
-                } else {
-                    alert('Error: ' + (result.detail || 'Unknown'));
-                    sel.style.borderColor = '#ef4444';
-                    setTimeout(() => { sel.style.borderColor = origColor; }, 2000);
-                }
-            } catch (e) {
-                alert('Error switching engine: ' + e.message);
+                const res = await fetch(`${API_BASE}/engines/active`);
+                const data = await res.json();
+                const active = data.active_engines || [];
+
+                document.querySelectorAll('.engine-check').forEach(cb => {
+                    const eng = cb.value;
+                    cb.checked = active.includes(eng);
+                    updateToggleVisual(cb);
+                });
+            } catch (e) { console.warn('loadActiveEngines error:', e); }
+        }
+
+        function updateToggleVisual(checkbox) {
+            const label = checkbox.closest('.engine-toggle');
+            const dot = label.querySelector('.toggle-dot');
+            const colors = {
+                'bear_reject_v1': '#dc2626',
+                'bullish_v5': '#fbbf24',
+                'bull_soldiers_v1': '#16a34a'
+            };
+            if (checkbox.checked) {
+                dot.style.background = colors[checkbox.value] || '#10b981';
+                dot.style.boxShadow = `0 0 8px ${colors[checkbox.value] || '#10b981'}`;
+                label.style.opacity = '1';
+            } else {
+                dot.style.background = '#444';
+                dot.style.boxShadow = 'none';
+                label.style.opacity = '0.5';
             }
         }
+
+        async function toggleEngine(engineName) {
+            try {
+                const res = await fetch(`${API_BASE}/engines/toggle/${engineName}`, { method: 'POST' });
+                const data = await res.json();
+
+                if (data.status === 'ok') {
+                    const active = data.active_engines || [];
+                    document.querySelectorAll('.engine-check').forEach(cb => {
+                        cb.checked = active.includes(cb.value);
+                        updateToggleVisual(cb);
+                    });
+                    console.log(`Engine ${engineName} ${data.action}. Active: ${active.join(', ')}`);
+                } else {
+                    alert(data.detail || 'Error toggling engine');
+                    loadActiveEngines();  // Revert UI
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+                loadActiveEngines();
+            }
+        }
+
+        // Bind toggle clicks
+        document.querySelectorAll('.engine-toggle').forEach(label => {
+            label.addEventListener('click', (e) => {
+                e.preventDefault();
+                const eng = label.dataset.engine;
+                toggleEngine(eng);
+            });
+        });
+
+        // Backwards compatibility
+        async function switchEngine(engineName) {
+            await toggleEngine(engineName);
+        }
+
+        // Load on init
+        loadActiveEngines();
+
+        // ===== ENGINE DECISION TABLE =====
+        const ENGINE_ICONS = {
+            'bear_reject_v1': '🔴',
+            'bullish_v5': '🐂',
+            'bull_soldiers_v1': '🟢',
+            'malicia_v1': '🦊'
+        };
+        const ENGINE_LABELS = {
+            'bear_reject_v1': 'Three Red Crows',
+            'bullish_v5': 'Ultimate Bull v6',
+            'bull_soldiers_v1': 'Three White Soldiers',
+            'malicia_v1': 'Malicia Indígena'
+        };
+        const SIGNAL_STYLES = {
+            'CALL': { bg: 'rgba(16,185,129,0.2)', color: '#10b981', icon: '📈' },
+            'PUT': { bg: 'rgba(239,68,68,0.2)', color: '#ef4444', icon: '📉' },
+            'HOLD': { bg: 'rgba(100,100,100,0.1)', color: '#666', icon: '⏸️' },
+            'BLOCKED': { bg: 'rgba(251,191,36,0.15)', color: '#fbbf24', icon: '🚫' },
+            'ERROR': { bg: 'rgba(239,68,68,0.1)', color: '#ef4444', icon: '❌' },
+        };
+
+        async function pollEngineDecisions() {
+            try {
+                const res = await fetch(`${API_BASE}/engines/decisions`);
+                const data = await res.json();
+                const decisions = data.decisions || {};
+                const tbody = document.getElementById('engineDecisionBody');
+
+                if (Object.keys(decisions).length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="padding:10px;color:#666;text-align:center;">Bot procesando primer tick...</td></tr>';
+                    return;
+                }
+
+                let html = '';
+                for (const [eng, d] of Object.entries(decisions)) {
+                    const s = SIGNAL_STYLES[d.signal] || SIGNAL_STYLES['HOLD'];
+                    const icon = ENGINE_ICONS[eng] || '⚙️';
+                    const label = ENGINE_LABELS[eng] || eng;
+                    const conf = d.confidence ? (d.confidence * 100).toFixed(1) + '%' : '—';
+                    const reason = (d.reasoning || '').substring(0, 60);
+
+                    html += `<tr style="border-bottom:1px solid #222;">
+                        <td style="padding:6px;font-weight:600;">${icon} ${label}</td>
+                        <td style="padding:6px;text-align:center;">
+                            <span style="background:${s.bg};color:${s.color};padding:3px 10px;border-radius:6px;font-weight:700;font-size:12px;">
+                                ${s.icon} ${d.signal}
+                            </span>
+                        </td>
+                        <td style="padding:6px;text-align:center;color:${s.color};font-weight:600;">${conf}</td>
+                        <td style="padding:6px;color:#888;font-size:12px;">${reason}</td>
+                    </tr>`;
+                }
+                tbody.innerHTML = html;
+            } catch (e) {
+                console.warn('pollEngineDecisions error:', e);
+            }
+        }
+
+        setInterval(pollEngineDecisions, 10000);
+        pollEngineDecisions();
 
         async function resetRiskState() {
             if (!confirm('¿Estás seguro de resetear el drawdown y desbloquear el bot?')) return;

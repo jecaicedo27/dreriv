@@ -173,8 +173,15 @@ class Layer2GroqEngine:
         ema_50 = indicators.get('ema_50', 0)
         ema_trend = "bullish" if ema_20 > ema_50 else "bearish"
         
+        ha_open = indicators.get('ha_open_0', 0)
+        ha_close = indicators.get('ha_close_0', 0)
+        ha_trend = "🟢 Bullish" if ha_close > ha_open else "🔴 Bearish"
+        ha_context = f"\n- Heikin-Ashi Current: {ha_trend} (Open={ha_open:.2f}, Close={ha_close:.2f})"
+        
+        dist_ema21 = indicators.get('dist_ema21', 0)
+        dist_context = f"\n- Distance to EMA21: {dist_ema21:.2f}%"
+        
         # Recent price action
-        recent_candles = ""
         recent_candles = ""
         if candles:
             # Use up to 25 candles for better trend context
@@ -211,7 +218,7 @@ class Layer2GroqEngine:
 - RSI(14): {rsi:.1f} ({'oversold' if rsi < 30 else 'overbought' if rsi > 70 else 'neutral'})
 - Bollinger Position: {bb_position:.2f} (0=lower band, 0.5=middle, 1=upper band)
 - MACD Histogram: {macd_histogram:.4f} ({'bullish' if macd_histogram > 0 else 'bearish'})
-- EMA Trend (20/50): {ema_trend}
+- EMA Trend (20/50): {ema_trend}{ha_context}{dist_context}
 
 **Price Action:**{recent_candles}
 

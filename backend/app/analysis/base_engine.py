@@ -46,6 +46,17 @@ class BaseAnalysisEngine(ABC):
     version: str = "0.0"
     description: str = "Base engine (do not use directly)"
     
+    # === Trade timing (source of truth for sim + live) ===
+    DURATION_CANDLES: int = 5     # How many 1-min candles the trade lasts (5 = 5 min)
+    COOLDOWN_CANDLES: int = 3     # Min candles between trade entries
+    ALLOW_OVERLAP: bool = False   # If True, cooldown starts from ENTRY (trades can overlap)
+                                  # If False, cooldown starts from EXIT (sequential trades)
+
+    @property
+    def duration_seconds(self) -> int:
+        """Duration in seconds for Deriv API (DURATION_CANDLES * 60)."""
+        return self.DURATION_CANDLES * 60
+    
     @abstractmethod
     def analyze(self, df: pd.DataFrame, symbol: str = "R_100", **kwargs) -> Dict[str, Any]:
         """

@@ -32,120 +32,74 @@ _DEFAULT_DEFENSIVE = {
 
 # Registry of available engines — each with full operational presets
 _ENGINES = {
-    "original_v1": {
-        "module": "app.analysis.layer1_engine",
-        "class": "Layer1SignalEngine",
-        "description": "Original: Hurst + O-U + GARCH + EMA/RSI/MACD (3-vote)",
-        "version": "1.0",
-        "hurst_min": 0.6,
-        "hurst_max": 0.7,
-        "confidence_min": 0.60,
-        "confidence_max": 1.0,
-        "blocked_hours": [],
-        "defensive": {**_DEFAULT_DEFENSIVE},
-    },
-    "university_v2": {
-        "module": "app.analysis.university_engine",
-        "class": "UniversityEngine",
-        "description": "University: StochRSI + Confluencia Ponderada + Candlestick Patterns",
-        "version": "2.0",
-        "hurst_min": 0.6,
-        "hurst_max": 0.7,
-        "confidence_min": 0.60,
-        "confidence_max": 1.0,
-        "blocked_hours": [],
-        "defensive": {**_DEFAULT_DEFENSIVE},
-    },
-    "bullish_v3": {
-        "module": "app.analysis.bullish_engine",
-        "class": "BullishBreakoutEngine",
-        "description": "Bullish Breakout v3 (legacy): Solo CALL en tendencias alcistas",
-        "version": "3.0",
-        "hurst_min": 0.6,
-        "hurst_max": 0.7,
-        "confidence_min": 0.60,
-        "confidence_max": 1.0,
-        "blocked_hours": [],
-        "defensive": {**_DEFAULT_DEFENSIVE},
-    },
-    "bullish_v4": {
-        "module": "app.analysis.bullish_engine",
-        "class": "BullishBreakoutEngine",
-        "description": "Bullish v5: Disciplined Bull — solo CALL con alta convicción",
-        "version": "5.0",
-        "hurst_min": 0.52,
-        "hurst_max": 0.75,
-        "confidence_min": 0.60,
-        "confidence_max": 1.0,
-        "blocked_hours": [],
-        "defensive": {
-            **_DEFAULT_DEFENSIVE,
-            "cooldown_candles": 1,         # Fast re-entry for trending bull
-            "dir_cooldown_candles": 0,     # Disabled — bull only does CALL, dir cooldown unfairly penalizes
-        },
-    },
     "bullish_v5": {
         "module": "app.analysis.ultimate_bull_engine",
         "class": "UltimateBullEngine",
-        "description": "Ultimate Bull v5: Momentum + Pullbacks (60%+ Edge)",
-        "version": "5.0",
-        "hurst_min": 0.60,
+        "description": "Ultimate Bull v6: GA-optimized buy-the-dip CALL (54.4% WR)",
+        "version": "6.0",
+        "hurst_min": 0.35,
         "hurst_max": 0.85,
         "confidence_min": 0.60,
         "confidence_max": 1.0,
-        "blocked_hours": [],
+        "blocked_hours": [2, 3, 4, 5, 8, 9, 10, 12, 13, 16, 17, 18, 19],
         "defensive": {
             **_DEFAULT_DEFENSIVE,
-            "cooldown_candles": 1,
+            "cooldown_candles": 7,
             "dir_cooldown_candles": 0,
         },
     },
-    "bullish_groq_v5": {
-        "module": "app.analysis.bullish_groq_v5",
-        "class": "BullishGroqEngine",
-        "description": "Bullish Groq v5: Hybrid AI Engine (High Volume, Groq Validated)",
-        "version": "5.0-Groq",
-        "hurst_min": 0.55,
+    "bear_reject_v1": {
+        "module": "app.analysis.bear_rejection_engine",
+        "class": "ThreeRedCrowsEngine",
+        "description": "Three Red Crows v4: GA-optimized (54.6% WR, stable Jan/Feb)",
+        "version": "4.0",
+        "hurst_min": 0.35,
         "hurst_max": 0.85,
-        "confidence_min": 0.50,
+        "confidence_min": 0.60,
         "confidence_max": 1.0,
-        "blocked_hours": [],
+        "blocked_hours": [0, 3, 8, 9, 12, 13, 18, 20],
         "defensive": {
             **_DEFAULT_DEFENSIVE,
-            "cooldown_candles": 1,
+            "cooldown_candles": 3,
             "dir_cooldown_candles": 0,
         },
     },
-
-    "reversal_v5": {
-        "module": "app.analysis.reversal_engine",
-        "class": "ReversalSniperEngine",
-        "description": "Reversal Sniper v5: Mean-reversion counter-trend con edges data-mined",
-        "version": "5.0",
-        "hurst_min": 0.0,
-        "hurst_max": 1.0,
+    "bull_soldiers_v1": {
+        "module": "app.analysis.bull_soldiers_engine",
+        "class": "ThreeWhiteSoldiersEngine",
+        "description": "Three White Soldiers: 3 bullish candles equal bodies stepping up",
+        "version": "1.0",
+        "hurst_min": 0.35,
+        "hurst_max": 0.85,
         "confidence_min": 0.60,
         "confidence_max": 1.0,
-        "blocked_hours": [],
-        "defensive": {**_DEFAULT_DEFENSIVE},
-    },
-    "bearish_v6": {
-        "module": "app.analysis.bearish_engine",
-        "class": "BearishBreakdownEngine",
-        "description": "Bearish v7: Disciplined Bear — solo PUT confirmado",
-        "version": "7.0",
-        "hurst_min": 0.6,
-        "hurst_max": 0.7,
-        "confidence_min": 0.60,
-        "confidence_max": 1.0,
-        "blocked_hours": [],
+        "blocked_hours": [5, 7, 10, 13, 16, 22, 23],
         "defensive": {
             **_DEFAULT_DEFENSIVE,
-            "cooldown_candles": 1,
-            "dir_cooldown_candles": 0,     # Disabled — bear only does PUT
+            "cooldown_candles": 3,
+            "dir_cooldown_candles": 0,
         },
     },
-
+    "malicia_v1": {
+        "module": "app.analysis.malicia_engine",
+        "class": "MaliciaIndigenaEngine",
+        "description": "Malicia Indígena: CALL agresivo en tendencia alcista confirmada",
+        "version": "1.0",
+        "hurst_min": 0.50,    # Only trade trending markets
+        "hurst_max": 0.90,
+        "confidence_min": 0.60,
+        "confidence_max": 1.0,
+        "blocked_hours": [],   # No hour blocks — trends happen anytime
+        "duration_candles": 2, # 2 min trades (ride short waves in uptrend)
+        "defensive": {
+            **_DEFAULT_DEFENSIVE,
+            "cooldown_candles": 1,       # Aggressive: 1 candle cooldown
+            "dir_cooldown_candles": 0,   # No direction cooldown (always CALL)
+            "enable_wr_monitor": False,  # Aggressive strategy — engine gates are enough
+            "enable_global_streak": True,   # Pauses on loss streaks — improves WR from 51.6% to 53.2%
+            "enable_atr_gate": False,
+        },
+    },
 }
 
 

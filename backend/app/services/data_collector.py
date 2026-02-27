@@ -151,11 +151,14 @@ class DataCollector:
             # Calculate standard indicators
             df = TechnicalIndicators.calculate_all(df)
             
-            # Update candles with indicators (only latest ones to avoid overload)
-            for i, candle in enumerate(reversed(candles[-10:])):  # Last 10 candles
-                idx = len(candles) - 10 + i
-                if idx < len(df):
-                    row = df.iloc[idx]
+            # Update candles with indicators (NEWEST 10 candles)
+            # candles is DESC order: candles[0]=newest, candles[:10]=newest 10
+            # df is ASC order: df.iloc[-1]=newest, df.iloc[-10:]=newest 10
+            newest_10 = candles[:10]
+            for i, candle in enumerate(newest_10):
+                df_idx = len(df) - 1 - i  # Map DESC candle[0] → df.iloc[-1], candle[1] → df.iloc[-2], etc.
+                if 0 <= df_idx < len(df):
+                    row = df.iloc[df_idx]
                     
                     # EMA
                     candle.ema_9 = row.get('ema_9')
@@ -186,6 +189,12 @@ class DataCollector:
                     candle.momentum_10 = row.get('momentum_10')
                     candle.log_returns = row.get('log_returns')
                     candle.volume_delta = row.get('volume_delta')
+                    # ATF indicators
+                    candle.atf_basis = row.get('atf_basis')
+                    candle.atf_upper = row.get('atf_upper')
+                    candle.atf_lower = row.get('atf_lower')
+                    candle.atf_trend = int(row.get('atf_trend', 0)) if pd.notna(row.get('atf_trend')) else 0
+                    candle.atf_slope = row.get('atf_slope')
             
             # --- Calculate Hurst + O-U + GARCH for the LATEST candle ---
             if len(df) >= 200:
@@ -256,18 +265,42 @@ class DataCollector:
             return pd.DataFrame()
         
         df = pd.DataFrame([{
-            'open_time': c.open_time,
-            'open': float(c.open),
-            'high': float(c.high),
-            'low': float(c.low),
-            'close': float(c.close),
-            'volume': float(c.volume) if c.volume else 0,
-            'ema_9': float(c.ema_9) if c.ema_9 else None,
-            'ema_21': float(c.ema_21) if c.ema_21 else None,
-            'rsi_14': float(c.rsi_14) if c.rsi_14 else None,
-            'atr_14': float(c.atr_14) if c.atr_14 else None,
-            'returns': float(c.returns) if c.returns else None,
-            'volatility_realized': float(c.volatility_realized) if c.volatility_realized else None
-        } for c in reversed(candles)])
+        'open_time': c.open_time,
+        'open': float(c.open),
+        'high': float(c.high),
+        'low': float(c.low),
+        'close': float(c.close),
+        'volume': float(c.volume) if c.volume else 0,
+        # Standard indicators
+        'ema_9': float(c.ema_9) if c.ema_9 else None,
+        'ema_21': float(c.ema_21) if c.ema_21 else None,
+        'ema_50': float(c.ema_50) if c.ema_50 else None,
+        'rsi_14': float(c.rsi_14) if c.rsi_14 else None,
+        'atr_14': float(c.atr_14) if c.atr_14 else None,
+        'macd': float(c.macd) if c.macd else None,
+        'macd_signal': float(c.macd_signal) if c.macd_signal else None,
+        'macd_histogram': float(c.macd_histogram) if c.macd_histogram else None,
+        'bollinger_upper': float(c.bollinger_upper) if c.bollinger_upper else None,
+        'bollinger_middle': float(c.bollinger_middle) if c.bollinger_middle else None,
+        'bollinger_lower': float(c.bollinger_lower) if c.bollinger_lower else None,
+        'momentum_5': float(c.momentum_5) if c.momentum_5 else None,
+        'returns': float(c.returns) if c.returns else None,
+        'log_returns': float(c.log_returns) if c.log_returns else None,
+        'volatility_realized': float(c.volatility_realized) if c.volatility_realized else None,
+        'price_position': float(c.price_position) if c.price_position else None,
+        'volume_delta': float(c.volume_delta) if c.volume_delta else None,
+        # Statistical indicators (Hurst, O-U, GARCH)
+        'hurst_exponent': float(c.hurst_exponent) if c.hurst_exponent else None,
+        'hurst_fast': float(c.hurst_fast) if c.hurst_fast else None,
+        'garch_volatility_forecast': float(c.garch_volatility_forecast) if c.garch_volatility_forecast else None,
+        'ou_deviation': float(getattr(c, 'ou_deviation', None) or 0) if getattr(c, 'ou_deviation', None) else None,
+        'regime': getattr(c, 'regime', None),
+        # ATF indicators
+        'atf_basis': float(c.atf_basis) if getattr(c, 'atf_basis', None) else None,
+        'atf_upper': float(c.atf_upper) if getattr(c, 'atf_upper', None) else None,
+        'atf_lower': float(c.atf_lower) if getattr(c, 'atf_lower', None) else None,
+        'atf_trend': int(c.atf_trend) if getattr(c, 'atf_trend', None) is not None else 0,
+        'atf_slope': float(c.atf_slope) if getattr(c, 'atf_slope', None) else None,
+    } for c in reversed(candles)])
         
         return df

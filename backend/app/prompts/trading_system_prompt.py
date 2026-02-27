@@ -140,6 +140,8 @@ Be HONEST but REWARD strong setups. Confidence is your prediction of win probabi
 9. **UPDATED**: If MACD CONTRADICTS Layer 1 → need 3+ strong reversal signals OR force HOLD. Be very conservative.
 10. **RSI overbought (>70) is NOT a reversal signal by itself**. You need price action confirmation + MACD flip + extreme O-U.
 11. **Trend continuation is more likely than reversal**. Require EXTRAORDINARY evidence to trade against momentum.
+12. **Heikin-Ashi Veto (CRITICAL)**: If the 'Heikin-Ashi Current' indicator shows '🔴 Bearish', you MUST VETO (HOLD) any CALL signal. A red Heikin-Ashi means the pullback is still a falling knife. Only approve CALLs if the Heikin-Ashi is '🟢 Bullish'.
+13. **EMA21 Distance Veto**: The mathematical engine may send you high-volume signals with a 'Distance to EMA21' up to -0.6%. If this distance is mathematically deeper than -0.3%, the risk of trend failure is too high. You MUST VETO (HOLD) the CALL unless the MACD Histogram is MASSIVELY positive (>0.3).
 
 ## RISK RULES (OVERRIDE EVERYTHING)
 

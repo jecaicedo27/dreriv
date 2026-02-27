@@ -6,7 +6,6 @@ from starlette.responses import Response
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.models import Candle
-from app.analysis.layer1_engine import Layer1SignalEngine
 from app.analysis.indicators import TechnicalIndicators
 import pandas as pd
 import json
@@ -80,22 +79,122 @@ async def get_analysis_metrics(db: Session = Depends(get_db)):
             'volume': float(c.volume) if c.volume else 0
         } for c in candles])
         
-        # Use the configured engine (same as live bot)
+        # Use the configured engines (multi-engine parallel support)
         from app.core.config import get_settings
-        from app.analysis.engine_registry import get_engine, get_engine_config
+        from app.analysis.engine_registry import get_engine, get_engine_config, _ENGINES
         from app.simulation.trading_core import TradingCore
         _settings = get_settings()
-        engine_name = _settings.ENGINE_NAME
-        engine_cfg = get_engine_config(engine_name)
-        engine = get_engine(engine_name)
         
+        # Get all active engines from DB (always fresh)
+        try:
+            from sqlalchemy import text as _sa_text
+            import json as _json_mod
+            _ae_row = db.execute(_sa_text("SELECT value FROM bot_settings WHERE key = 'active_engines'")).fetchone()
+            if _ae_row:
+                active_engines = _json_mod.loads(_ae_row[0])
+                # Update module-level for /engines/decisions endpoint
+                try:
+                    import app.api.bot_status as _bs
+                    _bs._active_engines = active_engines
+                except: pass
+            else:
+                active_engines = [_settings.ENGINE_NAME]
+        except:
+            active_engines = [_settings.ENGINE_NAME]
+        # Validate
+        active_engines = [e for e in active_engines if e in _ENGINES]
+        if not active_engines:
+            active_engines = [_settings.ENGINE_NAME]
+        
+        # Run ALL active engines in parallel
+        engine_results = {}
+        best_signal = None
+        best_confidence = -1
+        best_engine_name = active_engines[0]
+        
+        for eng_name in active_engines:
+            try:
+                eng_cfg = get_engine_config(eng_name)
+                eng = get_engine(eng_name)
+                
+                h_min = eng_cfg.get('hurst_min', 0.6)
+                h_max = eng_cfg.get('hurst_max', 0.7)
+                b_hours = eng_cfg.get('blocked_hours', [])
+                
+                eng_result = TradingCore.analyze(
+                    engine=eng, df=df, symbol='R_100',
+                    use_groq=False, hurst_min=h_min, hurst_max=h_max,
+                )
+                
+                eng_signal = eng_result.get('action', eng_result.get('final_signal', 'HOLD'))
+                eng_conf = eng_result.get('confidence', eng_result.get('final_confidence', 0))
+                eng_reason = eng_result.get('reasoning', '')
+                
+                # Check hour block for this engine
+                from datetime import timezone as tz, timedelta as td
+                col_tz = tz(td(hours=-5))
+                col_hour = datetime.now(col_tz).hour
+                eng_hour_blocked = col_hour in b_hours
+                
+                if eng_hour_blocked:
+                    eng_signal = 'BLOCKED'
+                    eng_conf = 0
+                    eng_reason = f'🚫 Hora {col_hour:02d} bloqueada'
+                
+                engine_results[eng_name] = {
+                    "signal": eng_signal,
+                    "confidence": eng_conf,
+                    "reasoning": eng_reason,
+                    "version": eng_cfg.get("version", "?"),
+                    "description": eng_cfg.get("description", eng_name),
+                    "hour_blocked": eng_hour_blocked,
+                    "contract_type": eng_result.get('contract_type'),
+                    "duration": eng_result.get('duration', 300),
+                }
+                
+                # Pick best non-HOLD signal by confidence
+                if eng_signal not in ('HOLD', 'BLOCKED') and eng_conf > best_confidence:
+                    best_confidence = eng_conf
+                    best_signal = eng_result
+                    best_engine_name = eng_name
+                    
+            except Exception as eng_err:
+                engine_results[eng_name] = {
+                    "signal": "ERROR",
+                    "confidence": 0,
+                    "reasoning": str(eng_err),
+                }
+        
+        # Store decisions for dashboard table (updates every poll cycle)
+        try:
+            import app.api.bot_status as _bs
+            _bs._latest_engine_decisions = engine_results
+        except:
+            pass
+        # Use best engine's result, or fallback to primary
+        if best_signal is None:
+            primary_cfg = get_engine_config(active_engines[0])
+            result = TradingCore.analyze(
+                engine=get_engine(active_engines[0]), df=df, symbol='R_100',
+                use_groq=False,
+                hurst_min=primary_cfg.get('hurst_min', 0.6),
+                hurst_max=primary_cfg.get('hurst_max', 0.7),
+            )
+            best_engine_name = active_engines[0]
+            blocked_hours = primary_cfg.get('blocked_hours', [])
+        else:
+            result = best_signal
+            blocked_hours = get_engine_config(best_engine_name).get('blocked_hours', [])
+        
+        engine_name = best_engine_name
+        engine_cfg = get_engine_config(engine_name)
         hurst_min = engine_cfg.get('hurst_min', 0.6)
         hurst_max = engine_cfg.get('hurst_max', 0.7)
-        blocked_hours = engine_cfg.get('blocked_hours', [])
         
         # ===== ALWAYS calculate Hurst & O-U independently for dashboard display =====
         from app.analysis.hurst import HurstExponent
         from app.analysis.ornstein_uhlenbeck import OrnsteinUhlenbeckModel
+        import logging
         
         hurst_signal = {"hurst": 0.5, "regime": "UNKNOWN", "interpretation": ""}
         try:
@@ -107,24 +206,14 @@ async def get_analysis_metrics(db: Session = Depends(get_db)):
         try:
             ou_model = OrnsteinUhlenbeckModel(window=200)
             ou_model.fit(df['close'].values)
-            current_price = float(df['close'].iloc[-1])
-            ou_signal = ou_model.get_signal(current_price, threshold=2.0)
+            current_price_ou = float(df['close'].iloc[-1])
+            ou_signal = ou_model.get_signal(current_price_ou, threshold=2.0)
         except Exception as e:
             logging.debug(f"O-U calc error: {e}")
         
-        # ===== COMPUTE TECHNICAL INDICATORS (separate from engine) =====
+        # ===== COMPUTE TECHNICAL INDICATORS =====
         df = TechnicalIndicators.calculate_all(df)
         indicator_values = TechnicalIndicators.get_latest_values(df)
-        
-        # ===== ENGINE SIGNAL via TradingCore (consumes pre-calculated indicators) =====
-        result = TradingCore.analyze(
-            engine=engine,
-            df=df,
-            symbol='R_100',
-            use_groq=False,
-            hurst_min=hurst_min,
-            hurst_max=hurst_max,
-        )
         
         # Check if current hour is blocked (Colombia time)
         from datetime import timezone, timedelta
@@ -147,7 +236,7 @@ async def get_analysis_metrics(db: Session = Depends(get_db)):
             "timestamp": datetime.utcnow().isoformat(),
             "current_price": result.get('entry_price', float(df['close'].iloc[-1])),
             
-            # Engine info
+            # Engine info (best engine)
             "engine": {
                 "name": engine_name,
                 "hurst_min": hurst_min,
@@ -155,6 +244,13 @@ async def get_analysis_metrics(db: Session = Depends(get_db)):
                 "blocked_hours": blocked_hours,
                 "current_hour_col": col_hour,
                 "hour_blocked": hour_blocked,
+            },
+            
+            # Multi-engine results
+            "multi_engine": {
+                "active_engines": active_engines,
+                "results": engine_results,
+                "selected": engine_name,
             },
             
             # Hurst metrics (calculated independently — always live)
