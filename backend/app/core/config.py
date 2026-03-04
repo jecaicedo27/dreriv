@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     
     # Deriv API
     DERIV_API_TOKEN: str
+    DERIV_FOREX_API_TOKEN: str = ""  # Separate token for Forex bot (different Deriv account)
     DERIV_APP_ID: str
     DERIV_ACCOUNT_TYPE: str = "demo"
     

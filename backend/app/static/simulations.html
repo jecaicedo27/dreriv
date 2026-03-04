@@ -623,11 +623,12 @@
                 onchange="if(document.getElementById('multiEngineSelect')) document.getElementById('multiEngineSelect').value = this.value;"
                 style="background: #1e1e2e; color: #f9e2af; border: 1px solid #f9e2af55; border-radius: 6px; padding: 4px 8px; font-size: 11px; cursor: pointer; font-weight: 600;">
                 <option value="bullish_v5" selected>🐂 Ultimate Bull v5</option>
+                <option value="bearish_v5">🐻 Ultimate Bear v5</option>
 
 
                 <option value="bear_reject_v1">🔴 Three Red Crows</option>
                 <option value="bull_soldiers_v1">🟢 Three White Soldiers</option>
-                <option value="malicia_v1">🦊 Malicia Indígena</option>
+
             </select>
             <script>
                 // Engine presets — loaded from backend (single source of truth)
@@ -674,9 +675,10 @@
                     // Update hour filter engine label
                     const engineNames = {
                         'bullish_v5': '🐂 Ultimate Bull v5',
+                        'bearish_v5': '🐻 Ultimate Bear v5',
                         'bear_reject_v1': '🔴 Three Red Crows',
                         'bull_soldiers_v1': '🟢 Three White Soldiers',
-                        'malicia_v1': '🦊 Malicia Indígena',
+
                     };
                     const lbl = document.getElementById('hourFilterEngineLabel');
                     if (lbl) lbl.textContent = engineNames[engineValue] || engineValue;
@@ -754,11 +756,12 @@
                             onchange="if(document.getElementById('engineSelect')) { document.getElementById('engineSelect').value = this.value; applyEnginePreset(this.value); }"
                             style="background: #1e1e2e; color: #f9e2af; border: 1px solid #f9e2af55; border-radius: 6px; padding: 5px 8px; font-size: 12px; cursor: pointer; font-weight: 600;">
                             <option value="bullish_v5" selected>🐂 Ultimate Bull v5</option>
+                            <option value="bearish_v5">🐻 Ultimate Bear v5</option>
 
 
                             <option value="bear_reject_v1">🔴 Three Red Crows</option>
                             <option value="bull_soldiers_v1">🟢 Three White Soldiers</option>
-                            <option value="malicia_v1">🦊 Malicia Indígena</option>
+
                         </select>
                     </div>
                     <div style="display: flex; flex-direction: column; gap: 3px;">
@@ -999,11 +1002,12 @@
                         const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣'];
                         const engineIcons = {
                             'bullish_v5': '🐂',
+                            'bearish_v5': '🐻',
 
 
                             'bear_reject_v1': '🔴',
                             'bull_soldiers_v1': '🟢',
-                            'malicia_v1': '🦊',
+
                         };
 
                         let html = '';
@@ -3058,11 +3062,12 @@
                 // Render per-engine progress bars
                 const engineColors = {
                     'bullish_v5': '#fbbf24',
+                    'bearish_v5': '#a855f7',
 
 
                     'bear_reject_v1': '#dc2626',
                     'bull_soldiers_v1': '#16a34a',
-                    'malicia_v1': '#a855f7',
+
                 };
 
                 let html = '';

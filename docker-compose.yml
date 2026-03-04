@@ -110,6 +110,42 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Forex Bot (EUR/USD) — DISABLED (keeping system as R_100 specialist)
+  # forex-bot:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   container_name: deriv-forex
+  #   restart: unless-stopped
+  #   command: uvicorn app.main_forex:app --host 0.0.0.0 --port 8000 --reload
+  #   env_file:
+  #     - .env
+  #   volumes:
+  #     - ./backend:/app
+  #     - /var/log/deriv-bot:/var/log/deriv-bot
+  #   ports:
+  #     - "8002:8000"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   networks:
+  #     - deriv-network
+  #   healthcheck:
+  #     test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 40s
+  #   mem_limit: 2g
+  #   cpus: 1
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
+
 networks:
   deriv-network:
     driver: bridge

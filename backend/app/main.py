@@ -35,30 +35,17 @@ async def lifespan(app: FastAPI):
     # Initialize Rise/Fall bot
     bot = TradingBot()
     app.state.bot = bot
-    
-    # Start Rise/Fall bot in background
-    logger.info("🎬 Spawning Rise/Fall bot background task...")
+    logger.info("🎬 Spawning Rise/Fall (R_100) bot background task...")
     asyncio.create_task(bot.start())
-    
-    # Initialize Accumulator bot (shares memory with API)
-    # from app.accu_bot import AccumulatorBot
-    # accu_bot = AccumulatorBot()
-    # app.state.accu_bot = accu_bot
-    
-    # Start ACCU bot in background
-    # logger.info("🎰 Spawning Accumulator bot background task...")
-    # asyncio.create_task(accu_bot.start())
-    
+
     logger.success("✅ Application started successfully")
-    
+
     yield
-    
+
     # Shutdown
     logger.warning("⏸️  Shutting down application...")
     if hasattr(app.state, "bot"):
         await app.state.bot.stop()
-    if hasattr(app.state, "accu_bot"):
-        await app.state.accu_bot.stop()
     logger.success("✅ Application shutdown complete")
 
 
@@ -125,15 +112,10 @@ async def serve_accumulators():
     """Serve the Accumulators bot dashboard"""
     accu_path = os.path.join(static_dir, "accumulators.html")
     if os.path.exists(accu_path):
-        return FileResponse(
-            accu_path,
-            headers={
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Pragma": "no-cache",
-                "Expires": "0"
-            }
-        )
-    return {"error": "Accumulators page not found", "path": accu_path}
+        return FileResponse(accu_path, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"})
+    return {"error": "Accumulators page not found"}
+
+
 
 
 @app.get("/health")

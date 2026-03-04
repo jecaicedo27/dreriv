@@ -41,10 +41,28 @@ _ENGINES = {
         "hurst_max": 0.85,
         "confidence_min": 0.60,
         "confidence_max": 1.0,
-        "blocked_hours": [2, 3, 4, 5, 8, 9, 10, 12, 13, 16, 17, 18, 19],
+        "slope_min": 0.0,        # No slope — buy-the-dip works in lateral markets too
+        "slope_lookback": 20,    # Candles for linear regression window
         "defensive": {
             **_DEFAULT_DEFENSIVE,
             "cooldown_candles": 7,
+            "dir_cooldown_candles": 0,
+        },
+    },
+    "bearish_v5": {
+        "module": "app.analysis.ultimate_bear_engine",
+        "class": "UltimateBearEngine",
+        "description": "Ultimate Bear v5: Sell-the-rally PUT (mirror of bullish_v5)",
+        "version": "5.0",
+        "hurst_min": 0.35,
+        "hurst_max": 0.85,
+        "confidence_min": 0.60,
+        "confidence_max": 1.0,
+        "slope_min": 0.0,
+        "slope_lookback": 20,
+        "defensive": {
+            **_DEFAULT_DEFENSIVE,
+            "cooldown_candles": 3,   # Sweep-optimized (was 7)
             "dir_cooldown_candles": 0,
         },
     },
@@ -57,7 +75,8 @@ _ENGINES = {
         "hurst_max": 0.85,
         "confidence_min": 0.60,
         "confidence_max": 1.0,
-        "blocked_hours": [0, 3, 8, 9, 12, 13, 18, 20],
+        "slope_min": 0.05,
+        "slope_lookback": 20,
         "defensive": {
             **_DEFAULT_DEFENSIVE,
             "cooldown_candles": 3,
@@ -73,34 +92,108 @@ _ENGINES = {
         "hurst_max": 0.85,
         "confidence_min": 0.60,
         "confidence_max": 1.0,
-        "blocked_hours": [5, 7, 10, 13, 16, 22, 23],
+        "slope_min": 0.05,
+        "slope_lookback": 20,
         "defensive": {
             **_DEFAULT_DEFENSIVE,
             "cooldown_candles": 3,
             "dir_cooldown_candles": 0,
         },
     },
-    "malicia_v1": {
-        "module": "app.analysis.malicia_engine",
-        "class": "MaliciaIndigenaEngine",
-        "description": "Malicia Indígena: CALL agresivo en tendencia alcista confirmada",
+
+    # ============================================================
+    #  FOREX ENGINES — EUR/USD (frxEURUSD) — prefixed forex_
+    # ============================================================
+    "forex_trend_v1": {
+        "module": "app.analysis.forex_trend_engine",
+        "class": "ForexTrendEngine",
+        "description": "Forex Trend v1: EMA 9/21/50 alignment + sesión Londres/NY (EUR/USD)",
         "version": "1.0",
-        "hurst_min": 0.50,    # Only trade trending markets
+        "hurst_min": 0.52,
         "hurst_max": 0.90,
-        "confidence_min": 0.60,
+        "confidence_min": 0.63,
         "confidence_max": 1.0,
-        "blocked_hours": [],   # No hour blocks — trends happen anytime
-        "duration_candles": 2, # 2 min trades (ride short waves in uptrend)
+        "slope_min": 0.0,        # Forex uses session filter, not slope
+        "slope_lookback": 20,
+        "duration_candles": 5,
         "defensive": {
             **_DEFAULT_DEFENSIVE,
-            "cooldown_candles": 1,       # Aggressive: 1 candle cooldown
-            "dir_cooldown_candles": 0,   # No direction cooldown (always CALL)
-            "enable_wr_monitor": False,  # Aggressive strategy — engine gates are enough
-            "enable_global_streak": True,   # Pauses on loss streaks — improves WR from 51.6% to 53.2%
+            "cooldown_candles": 3,
+            "dir_cooldown_candles": 0,
+            "enable_wr_monitor": True,
+            "enable_global_streak": True,
+            "enable_atr_gate": False,
+        },
+    },
+    "forex_smart_money_v1": {
+        "module": "app.analysis.forex_smart_money_engine",
+        "class": "ForexSmartMoneyEngine",
+        "description": "Forex SMC v1: ChoCh + OB/FVG en EUR/USD con sesión activa",
+        "version": "1.0",
+        "hurst_min": 0.52,
+        "hurst_max": 0.90,
+        "confidence_min": 0.63,
+        "confidence_max": 1.0,
+        "slope_min": 0.0,
+        "slope_lookback": 20,
+        "duration_candles": 5,
+        "defensive": {
+            **_DEFAULT_DEFENSIVE,
+            "cooldown_candles": 5,
+            "dir_cooldown_candles": 0,
+            "enable_wr_monitor": False,
+            "enable_global_streak": True,
+            "enable_atr_gate": False,
+        },
+    },
+    "forex_session_v1": {
+        "module": "app.analysis.forex_session_engine",
+        "class": "ForexSessionEngine",
+        "description": "Forex Session v1: London Opening Range Breakout (EUR/USD)",
+        "version": "1.0",
+        "hurst_min": 0.50,
+        "hurst_max": 0.90,
+        "confidence_min": 0.63,
+        "confidence_max": 1.0,
+        "slope_min": 0.0,
+        "slope_lookback": 20,
+        "duration_candles": 5,
+        "defensive": {
+            **_DEFAULT_DEFENSIVE,
+            "cooldown_candles": 10,
+            "dir_cooldown_candles": 0,
+            "enable_wr_monitor": False,
+            "enable_global_streak": True,
+            "enable_atr_gate": False,
+        },
+    },
+    "forex_buydip_v1": {
+        "module": "app.analysis.forex_buydip_engine",
+        "class": "ForexBuyDipEngine",
+        "description": "Forex Buy-Dip v1: Buy-the-dip CALL expert (EUR/USD)",
+        "version": "1.0",
+        "hurst_min": 0.50,
+        "hurst_max": 0.90,
+        "confidence_min": 0.62,
+        "confidence_max": 1.0,
+        "slope_min": 0.0,
+        "slope_lookback": 20,
+        "duration_candles": 5,
+        "defensive": {
+            **_DEFAULT_DEFENSIVE,
+            "cooldown_candles": 7,
+            "dir_cooldown_candles": 0,
+            "enable_wr_monitor": True,
+            "enable_global_streak": True,
             "enable_atr_gate": False,
         },
     },
 }
+
+
+def list_forex_engines() -> list:
+    """Return names of all forex engines (prefixed with forex_)."""
+    return [k for k in _ENGINES if k.startswith("forex_")]
 
 
 def get_engine(name: str = "original_v1"):

@@ -16,7 +16,7 @@ from loguru import logger
 
 # Indicators that MUST be present (non-null) for any engine to work reliably
 REQUIRED_INDICATORS = [
-    'ema_21', 'ema_50', 'rsi_14',
+    'ema_9', 'ema_21', 'ema_50', 'rsi_14',
     'macd', 'macd_signal', 'macd_histogram',
     'bollinger_upper', 'bollinger_middle', 'bollinger_lower',
     'momentum_5',

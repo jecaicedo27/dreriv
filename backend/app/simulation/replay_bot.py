@@ -31,41 +31,59 @@ class ReplayBotSimulator:
 
     def __init__(self, config: dict = None):
         self.config = config or {}
-        self.min_confidence = self.config.get('min_confidence', 0.60)
-        self.max_confidence = self.config.get('max_confidence', 1.0)
+
+        # ===== AUTO-MERGE ENGINE REGISTRY (single source of truth) =====
+        # The engine_registry defines the motor's DNA: hurst, slope, cooldown, etc.
+        # Frontend config can override operational params (stake, use_groq) but
+        # engine-specific params come from the registry automatically.
+        self.engine_name = self.config.get('engine_name', 'original_v1')
+        try:
+            from app.analysis.engine_registry import get_engine_config
+            engine_cfg = get_engine_config(self.engine_name)
+            defensive = engine_cfg.get('defensive', {})
+        except Exception:
+            engine_cfg = {}
+            defensive = {}
+
+        # Engine params: registry is the default, config can override
+        self.hurst_min = self.config.get('hurst_min', engine_cfg.get('hurst_min', 0.6))
+        self.hurst_max = self.config.get('hurst_max', engine_cfg.get('hurst_max', 0.7))
+        self.slope_min = self.config.get('slope_min', engine_cfg.get('slope_min', 0.0))
+        self.slope_lookback = self.config.get('slope_lookback', engine_cfg.get('slope_lookback', 20))
+        self.min_confidence = self.config.get('min_confidence', engine_cfg.get('confidence_min', 0.60))
+        self.max_confidence = self.config.get('max_confidence', engine_cfg.get('confidence_max', 1.0))
+        self.trade_duration_candles = self.config.get('duration_candles', engine_cfg.get('duration_candles', 5))
+        self.cooldown_candles = self.config.get('cooldown_candles', defensive.get('cooldown_candles', 3))
+        self.dir_cooldown_candles = self.config.get('dir_cooldown_candles', defensive.get('dir_cooldown_candles', 30))
+        self.dir_cooldown_losses = self.config.get('dir_cooldown_losses', defensive.get('dir_cooldown_losses', 3))
+
+        # Operational params: these are NOT in the engine registry
         self.default_stake = self.config.get('stake', 60.0)
         self.payout_rate = self.config.get('payout_rate', 0.95)
-        self.trade_duration_candles = self.config.get('duration_candles', 5)
         self.initial_balance = self.config.get('initial_balance', 10000.0)
-        self.cooldown_candles = self.config.get('cooldown_candles', 3)
         self.use_groq = self.config.get('use_groq', True)
-        self.hurst_min = self.config.get('hurst_min', 0.6)
-        self.hurst_max = self.config.get('hurst_max', 0.7)
         self.blocked_hours = set(self.config.get('blocked_hours', []))  # Colombia time hours to skip
-        self.engine_name = self.config.get('engine_name', 'original_v1')
-        self.dir_cooldown_candles = self.config.get('dir_cooldown_candles', 30)  # 0 to disable
-        self.dir_cooldown_losses = self.config.get('dir_cooldown_losses', 3)
         
         # ===== DEFENSIVE FILTERS =====
         # Filter 1: Real-time WR monitoring (early stop)
-        self.wr_check_interval = self.config.get('wr_check_interval', 15)  # Check every N trades
-        self.wr_pause_threshold = self.config.get('wr_pause_threshold', 0.45)  # Pause if WR < this after 20+ trades
-        self.wr_stop_threshold = self.config.get('wr_stop_threshold', 0.40)   # Stop day if WR < this after 30+ trades
-        self.wr_pause_candles = self.config.get('wr_pause_candles', 30)  # How long to pause
-        self.wr_min_trades_pause = self.config.get('wr_min_trades_pause', 20)  # Min trades before pause check
-        self.wr_min_trades_stop = self.config.get('wr_min_trades_stop', 30)   # Min trades before stop check
-        self.enable_wr_monitor = self.config.get('enable_wr_monitor', True)
+        self.wr_check_interval = self.config.get('wr_check_interval', defensive.get('wr_check_interval', 15))
+        self.wr_pause_threshold = self.config.get('wr_pause_threshold', defensive.get('wr_pause_threshold', 0.45))
+        self.wr_stop_threshold = self.config.get('wr_stop_threshold', defensive.get('wr_stop_threshold', 0.40))
+        self.wr_pause_candles = self.config.get('wr_pause_candles', defensive.get('wr_pause_candles', 30))
+        self.wr_min_trades_pause = self.config.get('wr_min_trades_pause', defensive.get('wr_min_trades_pause', 20))
+        self.wr_min_trades_stop = self.config.get('wr_min_trades_stop', defensive.get('wr_min_trades_stop', 30))
+        self.enable_wr_monitor = self.config.get('enable_wr_monitor', defensive.get('enable_wr_monitor', True))
         
         # Filter 2: Global streak protection (any direction)
-        self.global_streak_limit = self.config.get('global_streak_limit', 5)  # Consecutive losses any dir → pause
-        self.global_streak_pause = self.config.get('global_streak_pause', 60)  # Pause candles after global streak
-        self.enable_global_streak = self.config.get('enable_global_streak', True)
+        self.global_streak_limit = self.config.get('global_streak_limit', defensive.get('global_streak_limit', 5))
+        self.global_streak_pause = self.config.get('global_streak_pause', defensive.get('global_streak_pause', 60))
+        self.enable_global_streak = self.config.get('enable_global_streak', defensive.get('enable_global_streak', True))
         
         # Filter 3: ATR volatility gate
-        self.atr_lookback = self.config.get('atr_lookback', 30)  # ATR lookback window
-        self.atr_low_mult = self.config.get('atr_low_mult', 0.5)   # Skip if ATR < avg * this
-        self.atr_high_mult = self.config.get('atr_high_mult', 2.0)  # Skip if ATR > avg * this  
-        self.enable_atr_gate = self.config.get('enable_atr_gate', True)
+        self.atr_lookback = self.config.get('atr_lookback', defensive.get('atr_lookback', 30))
+        self.atr_low_mult = self.config.get('atr_low_mult', defensive.get('atr_low_mult', 0.5))
+        self.atr_high_mult = self.config.get('atr_high_mult', defensive.get('atr_high_mult', 2.0))
+        self.enable_atr_gate = self.config.get('enable_atr_gate', defensive.get('enable_atr_gate', True))
 
     def run(self, db: Session, date: str, symbol: str = 'R_100') -> Dict[str, Any]:
         """
@@ -258,6 +276,8 @@ class ReplayBotSimulator:
                     ai_provider=self.config.get('ai_provider', 'groq'),
                     hurst_min=self.hurst_min,
                     hurst_max=self.hurst_max,
+                    slope_min=self.slope_min,
+                    slope_lookback=self.slope_lookback,
                 )
 
                 final_signal = result["action"]

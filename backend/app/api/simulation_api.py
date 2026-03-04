@@ -366,6 +366,8 @@ def simulate_bot(
         "engine_name": engine_name,
         "hurst_min": engine_cfg.get("hurst_min", 0.6),
         "hurst_max": engine_cfg.get("hurst_max", 0.7),
+        "slope_min": engine_cfg.get("slope_min", 0.0),
+        "slope_lookback": engine_cfg.get("slope_lookback", 20),
         "use_groq": False,
         # Disable defensive filters that kill recovery trades after pullback losses
         "dir_cooldown_candles": 0,
@@ -732,7 +734,8 @@ async def bot_precompute(
         "ai_provider": ai_provider,
         "hurst_min": engine_cfg.get("hurst_min", hurst_min),
         "hurst_max": engine_cfg.get("hurst_max", hurst_max),
-        "blocked_hours": engine_cfg.get("blocked_hours", [int(h.strip()) for h in blocked_hours.split(',') if h.strip()] if blocked_hours else []),
+        "slope_min": engine_cfg.get("slope_min", 0.0),
+        "slope_lookback": engine_cfg.get("slope_lookback", 20),
         "engine_name": engine_name,
         # Defensive parameters from engine config
         "enable_wr_monitor": defensive.get("enable_wr_monitor", True),
@@ -1563,7 +1566,8 @@ def _run_engine_sim(engine_name: str, dates: list, config: dict):
                     "engine_name": engine_name,
                     "hurst_min": engine_cfg.get("hurst_min", config.get("hurst_min", 0.6)),
                     "hurst_max": engine_cfg.get("hurst_max", config.get("hurst_max", 0.7)),
-                    "blocked_hours": engine_cfg.get("blocked_hours", config.get("blocked_hours", [])),
+                    "slope_min": engine_cfg.get("slope_min", 0.0),
+                    "slope_lookback": engine_cfg.get("slope_lookback", 20),
                     # Merge ALL defensive filters from registry
                     **{k: v for k, v in defensive.items()},
                 }

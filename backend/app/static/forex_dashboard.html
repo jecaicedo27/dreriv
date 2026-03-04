@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>Forex Bot — EUR/USD Live Dashboard</title>
+    <script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0a0e1a 0%, #0d1b3e 50%, #0a1628 100%);
+            color: #e0e8ff;
+            min-height: 100vh;
+            font-size: 14px;
+        }
+
+        /* ── HEADER ── */
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 16px;
+            background: rgba(13, 27, 62, 0.95);
+            border-bottom: 1px solid rgba(0, 120, 255, 0.3);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo {
+            font-size: 1.1rem;
+            font-weight: 700;
+            background: linear-gradient(90deg, #00aaff, #00ffcc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav-links a {
+            color: #8ab4ff;
+            text-decoration: none;
+            margin-left: 16px;
+            font-size: 13px;
+            transition: color .2s;
+        }
+
+        .nav-links a:hover {
+            color: #00aaff;
+        }
+
+        .price-pill {
+            background: rgba(0, 120, 255, 0.15);
+            border: 1px solid rgba(0, 120, 255, 0.4);
+            border-radius: 20px;
+            padding: 4px 14px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        /* ── LAYOUT ── */
+        .main {
+            display: flex;
+            height: calc(100vh - 44px);
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 280px;
+            min-width: 240px;
+            padding: 12px;
+            background: rgba(10, 20, 50, 0.8);
+            border-right: 1px solid rgba(0, 120, 255, 0.15);
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+
+        .chart-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        /* ── CARDS ── */
+        .card {
+            background: rgba(13, 27, 62, 0.7);
+            border: 1px solid rgba(0, 120, 255, 0.2);
+            border-radius: 10px;
+            padding: 12px;
+            margin-bottom: 10px;
+        }
+
+        .card-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: .08em;
+            color: #5a8aff;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        /* ── STATS ── */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+        }
+
+        .stat-box {
+            background: rgba(0, 120, 255, 0.07);
+            border-radius: 6px;
+            padding: 8px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #00aaff;
+        }
+
+        .stat-label {
+            font-size: 10px;
+            color: #6a82b8;
+            margin-top: 2px;
+        }
+
+        .stat-value.green {
+            color: #00ffcc;
+        }
+
+        .stat-value.red {
+            color: #ff4466;
+        }
+
+        /* ── ENGINE TOGGLES ── */
+        .engine-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(0, 120, 255, 0.08);
+        }
+
+        .engine-name {
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .engine-desc {
+            font-size: 10px;
+            color: #5a7aaa;
+            margin-top: 1px;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 40px;
+            height: 20px;
+            flex-shrink: 0;
+        }
+
+        .toggle-switch input {
+            display: none;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #1a2a4a;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: .3s;
+            border: 1px solid rgba(0, 120, 255, 0.3);
+        }
+
+        .toggle-slider::before {
+            content: '';
+            position: absolute;
+            height: 14px;
+            width: 14px;
+            left: 2px;
+            bottom: 2px;
+            background: #4a6aaa;
+            border-radius: 50%;
+            transition: .3s;
+        }
+
+        input:checked+.toggle-slider {
+            background: rgba(0, 170, 255, 0.3);
+            border-color: #00aaff;
+        }
+
+        input:checked+.toggle-slider::before {
+            transform: translateX(20px);
+            background: #00aaff;
+        }
+
+        /* ── CHART TOOLBAR ── */
+        .chart-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            background: rgba(10, 20, 50, 0.9);
+            border-bottom: 1px solid rgba(0, 120, 255, 0.15);
+            font-size: 12px;
+        }
+
+        .toolbar-label {
+            color: #5a8aff;
+        }
+
+        .btn {
+            background: rgba(0, 120, 255, 0.15);
+            border: 1px solid rgba(0, 120, 255, 0.3);
+            color: #8ab4ff;
+            border-radius: 6px;
+            padding: 3px 10px;
+            cursor: pointer;
+            font-size: 11px;
+            font-family: inherit;
+            transition: .2s;
+        }
+
+        .btn:hover {
+            background: rgba(0, 120, 255, 0.3);
+            color: #fff;
+        }
+
+        .btn.active {
+            background: rgba(0, 170, 255, 0.3);
+            border-color: #00aaff;
+            color: #00aaff;
+        }
+
+        /* ── CHART ── */
+        #forex-chart {
+            flex: 1 1 55%;
+            min-height: 200px;
+            width: 100%;
+        }
+
+        /* ── TRADE TABLE ── */
+        .trade-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+
+        .trade-table th {
+            padding: 5px 6px;
+            text-align: left;
+            color: #5a8aff;
+            border-bottom: 1px solid rgba(0, 120, 255, 0.2);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 10px;
+        }
+
+        .trade-table td {
+            padding: 4px 6px;
+            border-bottom: 1px solid rgba(0, 120, 255, 0.07);
+        }
+
+        .trade-table tr:hover td {
+            background: rgba(0, 120, 255, 0.05);
+        }
+
+        .badge {
+            border-radius: 4px;
+            padding: 1px 6px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+
+        .badge.WIN {
+            background: rgba(0, 255, 100, 0.15);
+            color: #00ff88;
+        }
+
+        .badge.LOSS {
+            background: rgba(255, 50, 80, 0.15);
+            color: #ff4466;
+        }
+
+        .badge.PENDING {
+            background: rgba(255, 200, 0, 0.15);
+            color: #ffcc00;
+        }
+
+        .badge.CALL {
+            background: rgba(0, 120, 255, 0.2);
+            color: #00aaff;
+        }
+
+        .badge.PUT {
+            background: rgba(255, 80, 120, 0.2);
+            color: #ff6090;
+        }
+
+        /* ── BOTTOM PANEL ── */
+        .bottom-panel {
+            flex: 0 0 auto;
+            height: 35%;
+            min-height: 150px;
+            overflow-y: auto;
+            border-top: 1px solid rgba(0, 120, 255, 0.15);
+            padding: 8px 12px;
+        }
+
+        /* ── DOWNLOAD BTN ── */
+        .btn-primary {
+            background: linear-gradient(90deg, #0055cc, #0088ff);
+            border: none;
+            color: #fff;
+            border-radius: 6px;
+            padding: 6px 14px;
+            cursor: pointer;
+            font-size: 12px;
+            font-family: inherit;
+            width: 100%;
+            margin-top: 6px;
+            transition: .2s;
+        }
+
+        .btn-primary:hover {
+            opacity: 0.85;
+        }
+
+        /* ── STATUS PILL ── */
+        .status-pill {
+            display: inline-block;
+            border-radius: 12px;
+            padding: 2px 10px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+
+        .status-pill.on {
+            background: rgba(0, 255, 100, 0.15);
+            color: #00ff88;
+        }
+
+        .status-pill.off {
+            background: rgba(255, 80, 80, 0.15);
+            color: #ff6060;
+        }
+
+        /* ── SCROLLBAR ── */
+        ::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(0, 120, 255, 0.3);
+            border-radius: 4px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <span class="logo">🌍 Forex Bot — EUR/USD</span>
+        <div class="nav-links">
+            <a href="/deriv/dashboard">📊 R_100 Bot</a>
+            <a href="/deriv/forex-simulations">🔬 Simulaciones Forex</a>
+        </div>
+        <div>
+            <span class="price-pill" id="live-price">EUR/USD: —</span>
+            <span id="bot-status-pill" class="status-pill off" style="margin-left:8px">● OFFLINE</span>
+        </div>
+    </header>
+
+    <div class="main">
+        <!-- ── SIDEBAR ── -->
+        <div class="sidebar">
+
+            <!-- DERIV BALANCE -->
+            <div class="card" style="text-align:center;">
+                <div class="card-title">💰 Saldo Deriv (Forex)</div>
+                <div class="stat-value" id="deriv-balance" style="font-size:1.4rem;margin:4px 0;">$—</div>
+                <div class="stat-label" id="deriv-account-info" style="font-size:10px;">Conectando...</div>
+            </div>
+
+            <!-- TODAY STATS -->
+            <div class="card">
+                <div class="card-title">📈 Hoy</div>
+                <div class="stat-grid">
+                    <div class="stat-box">
+                        <div class="stat-value" id="stat-trades">0</div>
+                        <div class="stat-label">Trades</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="stat-wr">0%</div>
+                        <div class="stat-label">Win Rate</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="stat-pnl">$0</div>
+                        <div class="stat-label">P&L</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="stat-pending">0</div>
+                        <div class="stat-label">Pendientes</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ALL-TIME STATS -->
+            <div class="card">
+                <div class="card-title">🏦 Total</div>
+                <div class="stat-grid">
+                    <div class="stat-box">
+                        <div class="stat-value" id="total-trades">0</div>
+                        <div class="stat-label">Trades</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="total-wr">0%</div>
+                        <div class="stat-label">Win Rate</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="total-pnl">$0</div>
+                        <div class="stat-label">PnL Total</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="total-wins">0</div>
+                        <div class="stat-label">Wins</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ENGINES -->
+            <div class="card">
+                <div class="card-title">⚙️ Motores Forex</div>
+                <div id="engines-container">
+                    <div style="color:#5a7aaa;font-size:11px;">Cargando motores...</div>
+                </div>
+            </div>
+
+            <!-- HISTORICAL DOWNLOAD -->
+            <div class="card">
+                <div class="card-title">⬇️ Datos Históricos</div>
+                <select id="hist-days" class="btn" style="width:100%;margin-bottom:6px;">
+                    <option value="30">30 días</option>
+                    <option value="60">60 días</option>
+                    <option value="90">90 días</option>
+                </select>
+                <button class="btn-primary" onclick="downloadHistory()">
+                    Descargar EUR/USD de Deriv
+                </button>
+                <div id="hist-status" style="font-size:10px;color:#5a8aff;margin-top:4px;"></div>
+            </div>
+        </div>
+
+        <!-- ── CHART AREA ── -->
+        <div class="chart-area">
+            <div class="chart-toolbar">
+                <span class="toolbar-label">EUR/USD 1m</span>
+                <button id="btn-ema" class="btn active" onclick="toggleOverlay('ema')">EMA 9/21/50</button>
+                <button id="btn-bb" class="btn" onclick="toggleOverlay('bb')">Bollinger</button>
+                <span style="margin-left:auto;color:#5a8aff;font-size:11px;" id="toolbar-candles">— velas</span>
+            </div>
+            <div id="forex-chart"></div>
+
+            <!-- TRADE HISTORY -->
+            <div class="bottom-panel">
+                <div class="card-title" style="margin-bottom:6px;">📋 Últimos Trades EUR/USD</div>
+                <table class="trade-table">
+                    <thead>
+                        <tr>
+                            <th>Hora</th>
+                            <th>Motor</th>
+                            <th>Dir</th>
+                            <th>Entrada</th>
+                            <th>Conf</th>
+                            <th>P&L</th>
+                            <th>Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="trade-tbody">
+                        <tr>
+                            <td colspan="7" style="color:#5a7aaa;padding:10px;">Sin trades aún</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ─── CONFIG ────────────────────────────────────────────────────────────────
+        const BASE = '/deriv';
+        const REFRESH_MS = 15000;
+
+        // ─── CHART SETUP ───────────────────────────────────────────────────────────
+        const chartEl = document.getElementById('forex-chart');
+        const chart = LightweightCharts.createChart(chartEl, {
+            width: chartEl.offsetWidth,
+            height: chartEl.offsetHeight,
+            layout: { background: { color: 'transparent' }, textColor: '#8ab4ff' },
+            grid: { vertLines: { color: '#0d1e40' }, horzLines: { color: '#0d1e40' } },
+            crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+            rightPriceScale: { borderColor: '#1a3060' },
+            timeScale: { borderColor: '#1a3060', timeVisible: true, secondsVisible: false },
+        });
+
+        const candleSeries = chart.addCandlestickSeries({
+            upColor: '#00ffcc', downColor: '#ff4466',
+            borderUpColor: '#00ffcc', borderDownColor: '#ff4466',
+            wickUpColor: '#00ffcc', wickDownColor: '#ff4466',
+        });
+
+        // EMA series
+        const ema9s = chart.addLineSeries({ color: '#ffaa00', lineWidth: 1, title: 'EMA9' });
+        const ema21s = chart.addLineSeries({ color: '#00aaff', lineWidth: 1, title: 'EMA21' });
+        const ema50s = chart.addLineSeries({ color: '#ff66aa', lineWidth: 1, title: 'EMA50' });
+        // Bollinger
+        const bbUps = chart.addLineSeries({ color: 'rgba(0,200,255,0.3)', lineWidth: 1, title: 'BB Up' });
+        const bbMids = chart.addLineSeries({ color: 'rgba(0,200,255,0.15)', lineWidth: 1, lineStyle: 2 });
+        const bbLows = chart.addLineSeries({ color: 'rgba(0,200,255,0.3)', lineWidth: 1, title: 'BB Lo' });
+
+        let overlays = { ema: true, bb: false };
+
+        function toggleOverlay(key) {
+            overlays[key] = !overlays[key];
+            document.getElementById('btn-' + key).classList.toggle('active', overlays[key]);
+            applyVisibility();
+        }
+
+        function applyVisibility() {
+            ema9s.applyOptions({ visible: overlays.ema });
+            ema21s.applyOptions({ visible: overlays.ema });
+            ema50s.applyOptions({ visible: overlays.ema });
+            bbUps.applyOptions({ visible: overlays.bb });
+            bbMids.applyOptions({ visible: overlays.bb });
+            bbLows.applyOptions({ visible: overlays.bb });
+        }
+
+        // Trade markers on chart
+        let tradeMarkers = [];
+        function updateTradeMarkers(trades) {
+            tradeMarkers = trades
+                .filter(t => t.exit_time && t.outcome !== 'PENDING')
+                .map(t => ({
+                    time: Math.floor(new Date(t.entry_time).getTime() / 1000),
+                    position: t.direction === 'CALL' ? 'belowBar' : 'aboveBar',
+                    color: t.outcome === 'WIN' ? '#00ffcc' : '#ff4466',
+                    shape: t.direction === 'CALL' ? 'arrowUp' : 'arrowDown',
+                    text: (t.outcome === 'WIN' ? '✓' : '✗') + ' ' + (t.engine_name || ''),
+                }));
+            candleSeries.setMarkers(tradeMarkers);
+        }
+
+        // Resize
+        const ro = new ResizeObserver(() => {
+            chart.applyOptions({ width: chartEl.offsetWidth, height: chartEl.offsetHeight });
+        });
+        ro.observe(chartEl);
+
+        // ─── DATA LOAD ─────────────────────────────────────────────────────────────
+        async function loadCandles() {
+            try {
+                const r = await fetch(`${BASE}/api/forex/candles-with-indicators?limit=400`);
+                const data = await r.json();
+                if (!data.length) return;
+
+                const candles = data.filter(d => d.open && d.high && d.low && d.close).map(d => ({
+                    time: d.time, open: +d.open, high: +d.high, low: +d.low, close: +d.close
+                }));
+                candleSeries.setData(candles);
+                document.getElementById('toolbar-candles').textContent = `${candles.length} velas`;
+
+                // EMA
+                ema9s.setData(data.filter(d => d.ema_9).map(d => ({ time: d.time, value: +d.ema_9 })));
+                ema21s.setData(data.filter(d => d.ema_21).map(d => ({ time: d.time, value: +d.ema_21 })));
+                ema50s.setData(data.filter(d => d.ema_50).map(d => ({ time: d.time, value: +d.ema_50 })));
+
+                // BB
+                bbUps.setData(data.filter(d => d.bollinger_upper).map(d => ({ time: d.time, value: +d.bollinger_upper })));
+                bbMids.setData(data.filter(d => d.bollinger_middle).map(d => ({ time: d.time, value: +d.bollinger_middle })));
+                bbLows.setData(data.filter(d => d.bollinger_lower).map(d => ({ time: d.time, value: +d.bollinger_lower })));
+
+                applyVisibility();
+
+                // Update live price
+                const last = candles[candles.length - 1];
+                if (last) {
+                    document.getElementById('live-price').textContent = `EUR/USD: ${(+last.close).toFixed(5)}`;
+                }
+            } catch (e) { console.warn('Candle load error:', e); }
+        }
+
+        async function loadBotStatus() {
+            try {
+                const r = await fetch(`${BASE}/api/forex/bot-status`);
+                const d = await r.json();
+                const pill = document.getElementById('bot-status-pill');
+                pill.textContent = d.running ? '● LIVE' : '● OFFLINE';
+                pill.className = 'status-pill ' + (d.running ? 'on' : 'off');
+                if (d.current_price) {
+                    document.getElementById('live-price').textContent = `EUR/USD: ${d.current_price}`;
+                }
+                // Deriv balance
+                if (d.deriv_balance != null) {
+                    const balEl = document.getElementById('deriv-balance');
+                    balEl.textContent = '$' + parseFloat(d.deriv_balance).toFixed(2);
+                    balEl.className = 'stat-value ' + (d.deriv_balance >= 10000 ? 'green' : d.deriv_balance < 9000 ? 'red' : '');
+                    const infoEl = document.getElementById('deriv-account-info');
+                    infoEl.textContent = d.deriv_account_type ? `Cuenta ${d.deriv_account_type}` : 'Conectado';
+                }
+                const t = d.today || {};
+                document.getElementById('stat-trades').textContent = t.trades || 0;
+                document.getElementById('stat-pending').textContent = t.pending || 0;
+                const wr = t.win_rate || 0;
+                const wrEl = document.getElementById('stat-wr');
+                wrEl.textContent = (wr * 100).toFixed(1) + '%';
+                wrEl.className = 'stat-value ' + (wr >= 0.55 ? 'green' : wr < 0.45 ? 'red' : '');
+                const pnlEl = document.getElementById('stat-pnl');
+                pnlEl.textContent = (t.pnl >= 0 ? '+' : '') + '$' + (t.pnl || 0).toFixed(2);
+                pnlEl.className = 'stat-value ' + ((t.pnl || 0) >= 0 ? 'green' : 'red');
+            } catch (e) { }
+        }
+
+        async function loadAllStats() {
+            try {
+                const r = await fetch(`${BASE}/api/forex/trades/stats`);
+                const d = await r.json();
+                document.getElementById('total-trades').textContent = d.total_trades || 0;
+                document.getElementById('total-wins').textContent = d.wins || 0;
+                const wr = d.win_rate || 0;
+                const wrEl = document.getElementById('total-wr');
+                wrEl.textContent = (wr * 100).toFixed(1) + '%';
+                wrEl.className = 'stat-value ' + (wr >= 0.55 ? 'green' : wr < 0.45 ? 'red' : '');
+                const pnlEl = document.getElementById('total-pnl');
+                pnlEl.textContent = (d.total_pnl >= 0 ? '+' : '') + '$' + (d.total_pnl || 0).toFixed(2);
+                pnlEl.className = 'stat-value ' + ((d.total_pnl || 0) >= 0 ? 'green' : 'red');
+            } catch (e) { }
+        }
+
+        async function loadTrades() {
+            try {
+                const r = await fetch(`${BASE}/api/forex/trades?limit=50`);
+                const trades = await r.json();
+                updateTradeMarkers(trades);
+                const tbody = document.getElementById('trade-tbody');
+                if (!trades.length) {
+                    tbody.innerHTML = '<tr><td colspan="7" style="color:#5a7aaa;padding:10px;">Sin trades aún</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = trades.slice(0, 50).map(t => {
+                    const pnl = t.profit_loss !== null ? ((t.profit_loss >= 0 ? '+' : '') + '$' + parseFloat(t.profit_loss).toFixed(2)) : '—';
+                    const pnlC = t.profit_loss > 0 ? 'green' : t.profit_loss < 0 ? 'red' : '';
+                    const ep = t.entry_price ? parseFloat(t.entry_price).toFixed(5) : '—';
+                    const conf = t.confidence ? (parseFloat(t.confidence) * 100).toFixed(1) + '%' : '—';
+                    const eng = (t.engine_name || '').replace('forex_', '');
+                    const time = t.entry_time ? new Date(t.entry_time).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) : '—';
+                    return `<tr>
+                    <td>${time}</td>
+                    <td style="color:#8ab4ff;">${eng}</td>
+                    <td><span class="badge ${t.direction}">${t.direction}</span></td>
+                    <td>${ep}</td>
+                    <td>${conf}</td>
+                    <td style="color:${pnlC === 'green' ? '#00ffcc' : pnlC === 'red' ? '#ff4466' : '#8ab4ff'}">${pnl}</td>
+                    <td><span class="badge ${t.outcome || 'PENDING'}">${t.outcome || 'PEND'}</span></td>
+                </tr>`;
+                }).join('');
+            } catch (e) { }
+        }
+
+        async function loadEngines() {
+            try {
+                const r = await fetch(`${BASE}/api/forex/engines`);
+                const engines = await r.json();
+                const c = document.getElementById('engines-container');
+                c.innerHTML = engines.map(e => `
+                <div class="engine-row">
+                    <div>
+                        <div class="engine-name">${e.name.replace('forex_', '')}</div>
+                        <div class="engine-desc">${e.description.substring(0, 45)}...</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="eng-${e.name}" ${e.active ? 'checked' : ''}
+                            onchange="toggleEngine('${e.name}', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            `).join('');
+            } catch (e) { }
+        }
+
+        async function toggleEngine(name, active) {
+            try {
+                await fetch(`${BASE}/api/forex/engines/${name}/toggle?active=${active}`, { method: 'POST' });
+            } catch (e) { }
+        }
+
+        async function downloadHistory() {
+            const days = document.getElementById('hist-days').value;
+            const status = document.getElementById('hist-status');
+            status.textContent = `⏳ Descargando ${days} días de EUR/USD...`;
+            try {
+                const r = await fetch(`${BASE}/api/forex/download-history?days=${days}`, { method: 'POST' });
+                const d = await r.json();
+                if (d.status === 'started') {
+                    status.textContent = `✅ Descarga iniciada (${days} días). Los indicadores se calculan en background.`;
+                    setTimeout(() => { loadCandles(); status.textContent = ''; }, 8000);
+                } else {
+                    status.textContent = '❌ Error: ' + JSON.stringify(d);
+                }
+            } catch (e) {
+                status.textContent = '❌ Error de red';
+            }
+        }
+
+        // ─── REFRESH LOOP ──────────────────────────────────────────────────────────
+        async function refreshAll() {
+            await Promise.all([loadCandles(), loadBotStatus(), loadAllStats(), loadTrades()]);
+        }
+
+        loadEngines();
+        refreshAll();
+        setInterval(refreshAll, REFRESH_MS);
+    </script>
+</body>
+
+</html>

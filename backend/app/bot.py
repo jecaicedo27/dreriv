@@ -149,8 +149,8 @@ class TradingBot:
         logger.info("💰 Subscribing to balance updates...")
         await deriv_client.subscribe_balance()
         
-        # Subscribe to ticks for live candle building
-        logger.info(f"📊 Subscribing to {self.symbol} ticks...")
+        # Subscribe to ticks ONLY for live price tracking (feeder handles DB writes)
+        logger.info(f"📊 Subscribing to {self.symbol} ticks (price tracking only — feeder writes to DB)...")
         await deriv_client.subscribe_to_ticks(self.symbol)
         
         # Send startup notification
@@ -199,11 +199,12 @@ class TradingBot:
     
     async def _on_tick(self, tick_data: dict):
         """
-        Callback for incoming ticks — saves raw ticks and builds 1-min candles
+        Callback for incoming ticks — only tracks live price in memory.
+        The feeder container handles DB writes (raw_ticks + candles).
         """
         try:
-            await self.data_collector.process_tick(tick_data)
             self._last_tick_epoch = tick_data.get('epoch', 0)
+            self._last_price = float(tick_data.get('quote', 0))
         except Exception as e:
             logger.error(f"❌ Error processing tick: {e}")
     
@@ -459,20 +460,25 @@ class TradingBot:
                     eng_cfg = get_engine_config(eng_name)
                     h_min = eng_cfg.get('hurst_min', 0.6)
                     h_max = eng_cfg.get('hurst_max', 0.7)
-                    b_hours = set(eng_cfg.get('blocked_hours', []))
-                    
-                    # Check hour block for this engine
-                    from datetime import timezone as _tz, timedelta as _td
-                    col_tz = _tz(_td(hours=-5))
-                    col_hr = datetime.now(col_tz).hour
-                    
-                    if col_hr in b_hours:
-                        engine_decisions[eng_name] = {
-                            "signal": "BLOCKED", "confidence": 0,
-                            "reasoning": f"Hora {col_hr:02d} bloqueada",
-                        }
-                        logger.debug(f"🚫 {eng_name}: hora {col_hr} bloqueada")
-                        continue
+                    eng_min_conf = eng_cfg.get('confidence_min', 0.60)
+                    slope_min = eng_cfg.get('slope_min', 0.0)
+                    slope_lookback = eng_cfg.get('slope_lookback', 20)
+
+                    # === SLOPE FILTER (replaces blocked_hours) ===
+                    # Only trade if EMA21 linear regression slope is steep enough
+                    if slope_min > 0:
+                        from app.analysis.indicators import TechnicalIndicators
+                        slope_info = TechnicalIndicators.compute_ema_slope(df, lookback=slope_lookback)
+                        slope_abs = slope_info['slope_abs']
+                        slope_dir = slope_info['direction']
+                        if slope_abs < slope_min:
+                            engine_decisions[eng_name] = {
+                                "signal": "HOLD", "confidence": 0,
+                                "reasoning": f"Mercado lateral (pendiente={slope_info['slope']:.4f} < {slope_min})",
+                            }
+                            logger.debug(f"📏 {eng_name}: pendiente {slope_info['slope']:.4f} insuficiente (min={slope_min})")
+                            continue
+                        logger.debug(f"📈 {eng_name}: pendiente {slope_info['slope']:+.4f} OK ({slope_dir})")
                     
                     eng_result = await TradingCore.analyze_async(
                         engine=eng, df=df, symbol=self.symbol,
@@ -492,11 +498,13 @@ class TradingBot:
                     
                     logger.info(f"🧠 {eng_name}: {eng_action} ({eng_conf:.2%})")
                     
-                    if eng_action in ('CALL', 'PUT') and eng_conf > best_confidence:
+                    # Only consider it a winning engine if it passes ITS OWN confidence minimum
+                    if eng_action in ('CALL', 'PUT') and eng_conf >= eng_min_conf and eng_conf > best_confidence:
                         best_confidence = eng_conf
                         best_result = eng_result
                         best_engine = eng_name
                         best_engine_instance = eng  # Keep ref for duration/cooldown
+                        best_eng_min_conf = eng_min_conf
                         
                 except Exception as eng_err:
                     engine_decisions[eng_name] = {
@@ -515,7 +523,7 @@ class TradingBot:
             
             # Use best result or fallback
             if best_result is None:
-                # No engine gave CALL/PUT — use primary engine's HOLD result
+                # No engine gave CALL/PUT passing its threshold — use primary engine's HOLD result
                 result = await TradingCore.analyze_async(
                     engine=self.signal_engine, df=df, symbol=self.symbol,
                     use_groq=False, hurst_min=self.hurst_min, hurst_max=self.hurst_max,
@@ -523,10 +531,12 @@ class TradingBot:
                 best_engine = self.engine_name
                 best_eng_duration = self.signal_engine.duration_seconds
                 best_eng_cooldown = self.signal_engine.COOLDOWN_CANDLES
+                best_eng_min_conf = self.min_confidence
             else:
                 result = best_result
                 best_eng_duration = best_engine_instance.duration_seconds
                 best_eng_cooldown = best_engine_instance.COOLDOWN_CANDLES
+                # best_eng_min_conf already set in the loop
             
             final_decision = result["action"]
             final_confidence = result["confidence"]
@@ -635,7 +645,7 @@ class TradingBot:
                 logger.error(f"⚠️ Failed to save AnalysisHistory: {e}")
             
             if final_decision in ['CALL', 'PUT']:
-                if final_confidence >= self.min_confidence:
+                if final_confidence >= best_eng_min_conf:
                     
                     # Get current balance
                     self.risk_manager.refresh_state()

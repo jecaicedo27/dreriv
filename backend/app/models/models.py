@@ -253,3 +253,140 @@ class DecisionComparison(Base):
     resolved = Column(Boolean, default=False)
     resolve_at = Column(DateTime(timezone=True))
 
+
+# ============================================================
+#  FOREX TABLES — Completely isolated from R_100 / synthetic
+# ============================================================
+
+class ForexCandle(Base):
+    """OHLC candles + indicators for Forex instruments (e.g. frxEURUSD).
+    Kept fully separate from 'candles' table to avoid mixing with synthetics."""
+    __tablename__ = "forex_candles"
+
+    id = Column(BigInteger, primary_key=True)
+    symbol = Column(String(20), nullable=False, index=True)   # e.g. 'frxEURUSD'
+    timeframe = Column(String(5), nullable=False)              # '60s'
+    open_time = Column(DateTime(timezone=True), nullable=False, index=True)
+    close_time = Column(DateTime(timezone=True), nullable=False)
+
+    # OHLCV (price scale ~1.0800–1.1200 for EURUSD)
+    open  = Column(Numeric(18, 8), nullable=False)
+    high  = Column(Numeric(18, 8), nullable=False)
+    low   = Column(Numeric(18, 8), nullable=False)
+    close = Column(Numeric(18, 8), nullable=False)
+    volume = Column(Numeric(18, 4), default=0)
+
+    # Standard Technical Indicators
+    ema_9  = Column(Numeric(18, 8))
+    ema_21 = Column(Numeric(18, 8))
+    ema_50 = Column(Numeric(18, 8))
+    rsi_14 = Column(Numeric(8, 4))
+    stoch_rsi = Column(Numeric(8, 4))
+    atr_14 = Column(Numeric(18, 8))
+    adx_14 = Column(Numeric(8, 4))
+    plus_di  = Column(Numeric(8, 4))
+    minus_di = Column(Numeric(8, 4))
+    bollinger_upper  = Column(Numeric(18, 8))
+    bollinger_middle = Column(Numeric(18, 8))
+    bollinger_lower  = Column(Numeric(18, 8))
+    macd          = Column(Numeric(18, 8))
+    macd_signal   = Column(Numeric(18, 8))
+    macd_histogram = Column(Numeric(18, 8))
+
+    # Returns & Volatility
+    returns             = Column(Numeric(12, 8))
+    log_returns         = Column(Numeric(12, 8))
+    momentum_5          = Column(Numeric(12, 8))
+    momentum_10         = Column(Numeric(12, 8))
+    volatility_realized = Column(Numeric(12, 8))
+    volume_delta        = Column(Numeric(18, 4))
+    price_position      = Column(Numeric(8, 6))
+
+    # Market Structure (SMC — works on real forex)
+    is_order_block = Column(Boolean, default=False)
+    ob_type  = Column(String(10))
+    is_fvg   = Column(Boolean, default=False)
+    fvg_type = Column(String(10))
+    bos   = Column(Boolean, default=False)
+    choch = Column(Boolean, default=False)
+
+    # Statistical Analysis
+    hurst_exponent           = Column(Numeric(8, 6))
+    hurst_fast               = Column(Numeric(8, 6))
+    ou_deviation             = Column(Numeric(12, 8))
+    garch_volatility_forecast = Column(Numeric(12, 8))
+    regime = Column(String(30))
+
+    # ATF
+    atf_basis  = Column(Numeric(12, 8))
+    atf_upper  = Column(Numeric(12, 8))
+    atf_lower  = Column(Numeric(12, 8))
+    atf_trend  = Column(Integer, default=0)
+    atf_slope  = Column(Numeric(12, 8))
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ForexTrade(Base):
+    """Executed forex trades — separate from synthetic 'trades' table."""
+    __tablename__ = "forex_trades"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    symbol = Column(String(20), nullable=False)       # frxEURUSD
+    contract_type = Column(String(20), nullable=False) # CALL / PUT
+    direction     = Column(String(10), nullable=False)
+
+    # Entry
+    entry_time  = Column(DateTime(timezone=True), nullable=False)
+    entry_price = Column(Numeric(18, 8), nullable=False)
+    stake            = Column(Numeric(10, 2), nullable=False)
+    duration_seconds = Column(Integer, nullable=False)
+
+    # Exit
+    exit_time   = Column(DateTime(timezone=True))
+    exit_price  = Column(Numeric(18, 8))
+    profit_loss = Column(Numeric(10, 2))
+    outcome     = Column(String(10))  # WIN, LOSS, PENDING
+
+    # Decision layers
+    layer1_signal      = Column(String(20))
+    layer1_confidence  = Column(Numeric(6, 4))
+    layer3_groq_used   = Column(Boolean, default=False)
+    layer3_groq_confidence = Column(Numeric(6, 4))
+    layer3_groq_reasoning  = Column(Text)
+
+    # Final
+    final_confidence   = Column(Numeric(6, 4), nullable=False)
+    hurst_at_entry     = Column(Numeric(6, 4))
+    deriv_contract_id  = Column(String(50))
+    engine_name        = Column(String(50))
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ForexBotState(Base):
+    """Forex bot state — independent from synthetic bot state."""
+    __tablename__ = "forex_bot_state"
+
+    id = Column(Integer, primary_key=True, default=1)
+
+    balance         = Column(Numeric(12, 2), nullable=False, default=0)
+    initial_balance = Column(Numeric(12, 2), nullable=False, default=10000)
+    peak_balance    = Column(Numeric(12, 2), nullable=False, default=0)
+    current_drawdown_pct = Column(Numeric(8, 4), default=0)
+
+    is_trading_enabled  = Column(Boolean, default=True)
+    trades_today        = Column(Integer, default=0)
+    losses_consecutive  = Column(Integer, default=0)
+    wins_today          = Column(Integer, default=0)
+    losses_today        = Column(Integer, default=0)
+    daily_pnl           = Column(Numeric(10, 2), default=0)
+
+    cooldown_until  = Column(DateTime(timezone=True))
+    cooldown_reason = Column(String(100))
+    last_trade_date = Column(Date)
+
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+

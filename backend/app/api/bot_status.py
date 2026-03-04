@@ -316,30 +316,55 @@ async def get_engine_decisions():
         }
     }
 
+def _safe_float(val):
+    """Convert DB value to JSON-safe float. Returns None for NULL, NaN, Inf."""
+    if val is None:
+        return None
+    f = float(val)
+    import math
+    if math.isnan(f) or math.isinf(f):
+        return None
+    return f
+
 @router.get("/candles-with-indicators")
-async def get_candles_with_indicators(start_date: str = None, end_date: str = None, db: Session = Depends(get_db)):
-    """Get candles with EMA/BB/RSI indicators for chart overlays."""
+async def get_candles_with_indicators(start_date: str = None, end_date: str = None, limit: int = None, db: Session = Depends(get_db)):
+    """Get candles with EMA/BB/RSI indicators for chart overlays. Supports date range or limit (live mode)."""
     try:
         from sqlalchemy import text
-        if not start_date or not end_date:
+        if start_date and end_date:
+            # Historical date range mode
+            rows = db.execute(text("""
+                SELECT open_time, close,
+                       ema_9, ema_21, ema_50, bollinger_upper, bollinger_lower, rsi_14
+                FROM candles
+                WHERE symbol = 'R_100'
+                  AND open_time >= CAST(:start_date AS timestamp)
+                  AND open_time < (CAST(:end_date AS timestamp) + interval '1 day')
+                ORDER BY open_time ASC
+            """), {"start_date": start_date, "end_date": end_date}).fetchall()
+        elif limit:
+            # Live mode: latest N candles
+            rows = db.execute(text("""
+                SELECT open_time, close,
+                       ema_9, ema_21, ema_50, bollinger_upper, bollinger_lower, rsi_14
+                FROM candles
+                WHERE symbol = 'R_100'
+                ORDER BY open_time DESC
+                LIMIT :limit
+            """), {"limit": limit}).fetchall()
+            rows = list(reversed(rows))  # chronological order
+        else:
             return []
-        rows = db.execute(text("""
-            SELECT open_time, close,
-                   ema_21, ema_50, bollinger_upper, bollinger_lower, rsi_14
-            FROM candles
-            WHERE symbol = 'R_100'
-              AND open_time >= CAST(:start_date AS timestamp)
-              AND open_time < (CAST(:end_date AS timestamp) + interval '1 day')
-            ORDER BY open_time ASC
-        """), {"start_date": start_date, "end_date": end_date}).fetchall()
+
         return [
             {
                 "time": int(r.open_time.timestamp()),
-                "ema_21": float(r.ema_21) if r.ema_21 else None,
-                "ema_50": float(r.ema_50) if r.ema_50 else None,
-                "bollinger_upper": float(r.bollinger_upper) if r.bollinger_upper else None,
-                "bollinger_lower": float(r.bollinger_lower) if r.bollinger_lower else None,
-                "rsi_14": float(r.rsi_14) if r.rsi_14 else None,
+                "ema_9": _safe_float(r.ema_9),
+                "ema_21": _safe_float(r.ema_21),
+                "ema_50": _safe_float(r.ema_50),
+                "bollinger_upper": _safe_float(r.bollinger_upper),
+                "bollinger_lower": _safe_float(r.bollinger_lower),
+                "rsi_14": _safe_float(r.rsi_14),
             }
             for r in rows
         ]
@@ -378,7 +403,7 @@ async def get_candles(limit: int = 200, start_date: str = None, end_date: str = 
             ]
         else:
             # Default: latest N candles
-            candles = db.query(Candle).order_by(Candle.open_time.desc()).limit(limit).all()
+            candles = db.query(Candle).filter(Candle.symbol == 'R_100').order_by(Candle.open_time.desc()).limit(limit).all()
             candles.reverse()
             return [
                 {

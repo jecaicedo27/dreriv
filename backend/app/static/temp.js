@@ -1,14 +1,3 @@
-<!DOCTYPE html>
-<html lang="en">
-
-<head>
-    <meta charset="UTF-8">
-    <!-- Version: 6.0 - Nuclear Fix v2 + Global Ready Guard @ 2026-02-21 21:00 -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
-    <title>Deriv Trading Bot - Live Dashboard</title>
     <script>
         // v6.0 NUCLEAR SUPPRESSOR - Silence "Value is null" before library even loads
         (function () {
@@ -27,570 +16,6 @@
             };
         })();
     </script>
-    <script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
-            color: #e0e0e0;
-            min-height: 100vh;
-            padding: 0;
-            font-size: 15px;
-        }
-
-        .container {
-            width: 100%;
-            padding: 6px 12px;
-        }
-
-        header {
-            text-align: center;
-            margin-bottom: 8px;
-        }
-
-        h1 {
-            font-size: 1.2rem;
-            background: linear-gradient(90deg, #00ffaa, #00b8ff);
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 2px;
-        }
-
-        .status-badge {
-            display: inline-block;
-            padding: 6px 16px;
-            border-radius: 20px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        #debugLog {
-            position: fixed;
-            bottom: 10px;
-            right: 10px;
-            background: rgba(0, 0, 0, 0.8);
-            color: #0f0;
-            padding: 10px;
-            border: 1px solid #0f0;
-            font-family: monospace;
-            z-index: 9999;
-            max-width: 300px;
-            font-size: 10px;
-        }
-
-        .status-running {
-            background: rgba(0, 255, 170, 0.2);
-            color: #00ffaa;
-            border: 1px solid #00ffaa;
-        }
-
-        .status-stopped {
-            background: rgba(255, 69, 0, 0.2);
-            color: #ff4500;
-            border: 1px solid #ff4500;
-        }
-
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 10px;
-            margin-bottom: 10px;
-        }
-
-        .card {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            padding: 8px 12px;
-        }
-
-        .card:hover {
-            border-color: rgba(0, 255, 170, 0.3);
-        }
-
-        .card-title {
-            font-size: 0.7rem;
-            color: #9ca3af;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 2px;
-        }
-
-        .card-value {
-            font-size: 1.4rem;
-            font-weight: 700;
-            color: #fff;
-        }
-
-        .positive {
-            color: #00ffaa;
-        }
-
-        .negative {
-            color: #ff4500;
-        }
-
-        .trades-table {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            padding: 10px;
-            margin-bottom: 8px;
-            overflow-x: auto;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        th {
-            text-align: left;
-            padding: 12px;
-            color: #9ca3af;
-            font-size: 0.85rem;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        td {
-            padding: 12px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        }
-
-        .outcome-win {
-            color: #00ffaa;
-            font-weight: 600;
-        }
-
-        .outcome-loss {
-            color: #ff4500;
-            font-weight: 600;
-        }
-
-        .outcome-pending {
-            color: #fbbf24;
-            font-weight: 600;
-        }
-
-        .direction-call {
-            background: rgba(0, 255, 170, 0.2);
-            color: #00ffaa;
-            padding: 4px 12px;
-            border-radius: 8px;
-            font-size: 0.8rem;
-            font-weight: 600;
-        }
-
-        .direction-put {
-            background: rgba(255, 69, 0, 0.2);
-            color: #ff4500;
-            padding: 4px 12px;
-            border-radius: 8px;
-            font-size: 0.8rem;
-            font-weight: 600;
-        }
-
-        .last-updated {
-            text-align: center;
-            margin-top: 20px;
-            color: #6b7280;
-            font-size: 0.85rem;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #9ca3af;
-        }
-
-        @keyframes pulse {
-
-            0%,
-            100% {
-                opacity: 1;
-            }
-
-            50% {
-                opacity: 0.5;
-            }
-        }
-
-        .pulse {
-            animation: pulse 2s ease-in-out infinite;
-        }
-    </style>
-</head>
-
-<body>
-    <!-- Navigation Bar -->
-    <nav style="
-        position: sticky; top: 0; z-index: 1000;
-        display: flex; align-items: center; justify-content: space-between;
-        padding: 10px 24px;
-        background: rgba(15, 12, 41, 0.95);
-        backdrop-filter: blur(12px);
-        border-bottom: 1px solid rgba(255,255,255,0.1);
-        font-family: 'Inter', sans-serif;
-    ">
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 20px;">🤖</span>
-            <span style="font-weight: 700; font-size: 16px; color: #fff;">Deriv Bot</span>
-        </div>
-        <div style="display: flex; gap: 6px;">
-            <a href="/deriv/dashboard" style="
-                padding: 8px 18px; border-radius: 8px; text-decoration: none;
-                font-size: 13px; font-weight: 600; transition: all 0.2s;
-                background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff;
-            ">📊 Dashboard</a>
-            <a href="/deriv/simulations" style="
-                padding: 8px 18px; border-radius: 8px; text-decoration: none;
-                font-size: 13px; font-weight: 600; transition: all 0.2s;
-                background: rgba(255,255,255,0.08); color: #ccc;
-                border: 1px solid rgba(255,255,255,0.12);
-            " onmouseover="this.style.background='rgba(255,255,255,0.15)';this.style.color='#fff'"
-                onmouseout="this.style.background='rgba(255,255,255,0.08)';this.style.color='#ccc'">🔬 Simulaciones</a>
-            <a href="/deriv/accumulators" style="
-                padding: 8px 18px; border-radius: 8px; text-decoration: none;
-                font-size: 13px; font-weight: 600; transition: all 0.2s;
-                background: rgba(255,255,255,0.08); color: #ccc;
-                border: 1px solid rgba(255,255,255,0.12);
-            " onmouseover="this.style.background='rgba(255,255,255,0.15)';this.style.color='#fff'"
-                onmouseout="this.style.background='rgba(255,255,255,0.08)';this.style.color='#ccc'">🎰 Accumulators</a>
-            <a href="/deriv/forex" style="
-                padding: 8px 18px; border-radius: 8px; text-decoration: none;
-                font-size: 13px; font-weight: 600; transition: all 0.2s;
-                background: rgba(255,255,255,0.08); color: #ccc;
-                border: 1px solid rgba(255,255,255,0.12);
-            " onmouseover="this.style.background='rgba(255,255,255,0.15)';this.style.color='#fff'"
-                onmouseout="this.style.background='rgba(255,255,255,0.08)';this.style.color='#ccc'">🌍 Forex</a>
-        </div>
-    </nav>
-
-    <div class="container">
-        <header>
-            <h1>🤖 Deriv Trading Bot Dashboard</h1>
-            <div
-                style="display: flex; gap: 10px; justify-content: center; align-items: center; margin-top: 10px; flex-wrap: wrap;">
-                <span id="accountBadge" class="status-badge"
-                    style="display: none; border-color: #fbbf24; color: #fbbf24; background: rgba(251, 191, 36, 0.1);">Checking...</span>
-                <span id="statusBadge" class="status-badge status-running">● LOADING...</span>
-                <div style="display: flex; align-items: center; gap: 6px;">
-                    <span style="font-size: 12px; color: #a6adc8;">🧠 Motores:</span>
-                    <div id="engineToggles" style="display: flex; gap: 6px; flex-wrap: wrap;">
-                        <label class="engine-toggle" data-engine="bear_reject_v1"
-                            style="display: flex; align-items: center; gap: 4px; cursor: pointer; padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(220, 38, 38, 0.5); background: rgba(220, 38, 38, 0.1); font-size: 12px; font-weight: 600; transition: all 0.3s;">
-                            <input type="checkbox" class="engine-check" value="bear_reject_v1" style="display: none;"
-                                checked>
-                            <span class="toggle-dot"
-                                style="width: 10px; height: 10px; border-radius: 50%; background: #dc2626; display: inline-block; transition: all 0.3s;"></span>
-                            <span style="color: #fca5a5;">🔴 Red Crows</span>
-                        </label>
-                        <label class="engine-toggle" data-engine="bullish_v5"
-                            style="display: flex; align-items: center; gap: 4px; cursor: pointer; padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(251, 191, 36, 0.5); background: rgba(251, 191, 36, 0.1); font-size: 12px; font-weight: 600; transition: all 0.3s;">
-                            <input type="checkbox" class="engine-check" value="bullish_v5" style="display: none;">
-                            <span class="toggle-dot"
-                                style="width: 10px; height: 10px; border-radius: 50%; background: #666; display: inline-block; transition: all 0.3s;"></span>
-                            <span style="color: #fde68a;">🐂 Bull v6</span>
-                        </label>
-                        <label class="engine-toggle" data-engine="bearish_v5"
-                            style="display: flex; align-items: center; gap: 4px; cursor: pointer; padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(168, 85, 247, 0.5); background: rgba(168, 85, 247, 0.1); font-size: 12px; font-weight: 600; transition: all 0.3s;">
-                            <input type="checkbox" class="engine-check" value="bearish_v5" style="display: none;">
-                            <span class="toggle-dot"
-                                style="width: 10px; height: 10px; border-radius: 50%; background: #666; display: inline-block; transition: all 0.3s;"></span>
-                            <span style="color: #c4b5fd;">🐻 Bear v5</span>
-                        </label>
-                        <label class="engine-toggle" data-engine="bull_soldiers_v1"
-                            style="display: flex; align-items: center; gap: 4px; cursor: pointer; padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(22, 163, 74, 0.5); background: rgba(22, 163, 74, 0.1); font-size: 12px; font-weight: 600; transition: all 0.3s;">
-                            <input type="checkbox" class="engine-check" value="bull_soldiers_v1" style="display: none;">
-                            <span class="toggle-dot"
-                                style="width: 10px; height: 10px; border-radius: 50%; background: #666; display: inline-block; transition: all 0.3s;"></span>
-                            <span style="color: #86efac;">🟢 Soldiers</span>
-                        </label>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Analysis Metrics Panel -->
-            <div class="trades-table" style="margin-top: 10px; padding: 12px;">
-                <h3 style="margin-bottom: 8px; color: #fff; font-size: 1.1rem;">🔬 Live Analysis Metrics</h3>
-
-                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 8px;">
-                    <!-- Hurst Exponent -->
-                    <div class="card" style="padding: 10px;">
-                        <h3 style="margin-top: 0; color: #00ffaa; font-size: 1rem;">🔮 Hurst Exponent</h3>
-                        <div id="hurstValue" style="font-size: 28px; font-weight: bold; color: #fff;">-</div>
-                        <div id="hurstRegime"
-                            style="margin-top: 6px; padding: 5px; background: rgba(255,255,255,0.1); border-radius: 4px; text-align: center; font-size: 13px;">
-                            -</div>
-                        <div style="margin-top: 6px; font-size: 12px; color: #888;">
-                            📊 &lt;0.45 Reversión · 0.45-0.65 Aleatorio · &gt;0.65 Tendencia
-                        </div>
-                        <div id="hurstUpdated"
-                            style="margin-top: 4px; font-size: 11px; color: #888; text-align: right;">⏱ --:--:--
-                        </div>
-                    </div>
-                    <!-- O-U Deviation -->
-                    <div class="card" style="padding: 10px;">
-                        <h3 style="margin-top: 0; color: #00ffaa; font-size: 1rem;">O-U Deviation</h3>
-                        <div id="ouDeviation" style="font-size: 28px; font-weight: bold; color: #fff;">-</div>
-                        <div id="ouSignal"
-                            style="margin-top: 6px; padding: 5px; background: rgba(255,255,255,0.1); border-radius: 4px; text-align: center; font-size: 13px;">
-                            -</div>
-                        <div style="margin-top: 6px; font-size: 12px; color: #888;">
-                            📊 &lt;2σ Normal · &gt;2σ Extremo (oportunidad de reversión)
-                        </div>
-                        <div id="ouUpdated" style="margin-top: 4px; font-size: 11px; color: #888; text-align: right;">⏱
-                            --:--:--</div>
-                    </div>
-                    <!-- Market Thermometer -->
-                    <div class="card" style="padding: 10px;">
-                        <h3 style="margin-top: 0; color: #fbbf24; font-size: 1rem;">🌡️ Market Thermometer</h3>
-                        <div id="thermometerValue" style="font-size: 28px; font-weight: bold; color: #fff;">0%</div>
-                        <div id="thermometerStatus"
-                            style="margin-top: 6px; padding: 5px; background: rgba(255,255,255,0.1); border-radius: 4px; text-align: center; color: #9ca3af; font-size: 13px;">
-                            😴 INDECISION
-                        </div>
-                        <div style="margin-top: 6px; font-size: 12px; color: #888;">
-                            📊 0-50% Indecisión · 50-70% Interés · 70-90% Alistando · 90%+ 🚀
-                        </div>
-                        <div id="thermometerUpdated"
-                            style="margin-top: 4px; font-size: 11px; color: #888; text-align: right;">⏱ --:--:--
-                        </div>
-                    </div>
-                    <!-- Current Signal -->
-                    <div class="card" style="padding: 10px;">
-                        <h3 style="margin-top: 0; color: #00ffaa; font-size: 1rem;">Current Signal</h3>
-                        <div id="currentSignal" style="font-size: 28px; font-weight: bold; color: #fff;">-</div>
-                        <div id="signalConfidence" style="margin-top: 4px; color: #00ffaa; font-size: 14px;">Confidence:
-                            -</div>
-                        <div id="signalDuration" style="margin-top: 2px; color: #888; font-size: 13px;">Duration: -
-                        </div>
-                        <div style="margin-top: 6px; font-size: 12px; color: #888;">
-                            📊 <span style="color: #00ffaa;">CALL</span> subida · <span
-                                style="color: #ff4500;">PUT</span> bajada · <span style="color: #ffa500;">HOLD</span> no
-                            operar
-                        </div>
-                        <div id="signalUpdated"
-                            style="margin-top: 4px; font-size: 11px; color: #888; text-align: right;">⏱ --:--:--
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Reasoning -->
-                <div class="card" style="padding: 8px 10px;">
-                    <h3 style="margin-top: 0; color: #00ffaa; font-size: 1rem;">Analysis Reasoning</h3>
-                    <div id="analysisReasoning" style="color: #ccc; font-size: 14px; line-height: 1.5;">
-                        Waiting for analysis data...
-                    </div>
-                    <div id="reasoningUpdated"
-                        style="margin-top: 4px; font-size: 11px; color: #888; text-align: right;">⏱ --:--:--</div>
-                </div>
-
-                <!-- Multi-Engine Decision Table -->
-                <div class="card" style="padding: 8px 10px; grid-column: 1 / -1;">
-                    <h3 style="margin-top: 0; color: #c084fc; font-size: 1rem;">⚡ Decisiones de Motores en Tiempo Real
-                    </h3>
-                    <table id="engineDecisionTable" style="width: 100%; border-collapse: collapse; font-size: 13px;">
-                        <thead>
-                            <tr style="border-bottom: 1px solid #333;">
-                                <th style="text-align: left; padding: 6px; color: #a6adc8;">Motor</th>
-                                <th style="text-align: center; padding: 6px; color: #a6adc8;">Señal</th>
-                                <th style="text-align: center; padding: 6px; color: #a6adc8;">Conf.</th>
-                                <th style="text-align: left; padding: 6px; color: #a6adc8;">Reasoning</th>
-                            </tr>
-                        </thead>
-                        <tbody id="engineDecisionBody">
-                            <tr>
-                                <td colspan="4" style="padding:10px;color:#666;text-align:center;">Esperando datos del
-                                    bot...</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </header>
-
-        <!-- KPI Strip -->
-        <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin-bottom: 8px;">
-            <div class="card" style="padding: 6px 10px;">
-                <div class="card-title">Trading Symbol</div>
-                <div class="card-value" id="symbol">R_100</div>
-            </div>
-            <div class="card" style="padding: 6px 10px;">
-                <div class="card-title">Balance</div>
-                <div class="card-value" id="balance">$0.00</div>
-            </div>
-            <div class="card" style="padding: 6px 10px;">
-                <div class="card-title">Total Trades</div>
-                <div class="card-value" id="totalTrades">0</div>
-            </div>
-            <div class="card" style="padding: 6px 10px;">
-                <div class="card-title">Win Rate</div>
-                <div class="card-value" id="winRate">0%</div>
-            </div>
-            <div class="card" style="padding: 6px 10px;">
-                <div class="card-title">Today's P&L</div>
-                <div class="card-value" id="dailyPnl">$0.00</div>
-            </div>
-            <div class="card" style="padding: 6px 10px;">
-                <div class="card-title">Current Price</div>
-                <div class="card-value" id="currentPrice">$0.00</div>
-            </div>
-        </div>
-
-        <!-- AI + Scorecard | Risk -- side by side -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
-            <!-- LEFT: AI Analysis -->
-            <div style="display: flex; flex-direction: column; gap: 10px;">
-                <div class="card"
-                    style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); flex: 0 0 auto;">
-                    <div class="card-title" style="color: #60a5fa;">🧠 AI Analysis (Groq Layer 2)</div>
-                    <div style="display: flex; align-items: baseline; gap: 15px;">
-                        <div class="card-value" id="aiDecision">INITIALIZING</div>
-                        <div style="font-size: 1rem; color: #9ca3af;">
-                            Conf: <span id="aiConfidence" style="color: #fff; font-weight: bold;">0%</span>
-                        </div>
-                        <div style="font-size: 1rem; color: #9ca3af;">
-                            Trust Score: <span id="aiTrust" style="color: #fff; font-weight: bold;">0.50</span>
-                        </div>
-                    </div>
-                    <div id="aiReasoning"
-                        style="font-size: 1rem; margin-top: 8px; color: #d1d5db; line-height: 1.4; font-style: italic;">
-                        Waiting for first market analysis...
-                    </div>
-                    <div id="aiLastRun" style="font-size: 0.85rem; margin-top: 6px; color: #6b7280; text-align: right;">
-                        LAST RUN: NEVER
-                    </div>
-                </div>
-            </div><!-- end left column -->
-            <!-- RIGHT: Risk Management -->
-            <div class="card" id="riskPanel"
-                style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2);">
-                <div class="card-title"
-                    style="color: #ef4444; display: flex; justify-content: space-between; align-items: center;">
-                    <span>🛡️ Risk Management</span>
-                    <button id="resetRiskBtn" onclick="resetRiskState()"
-                        style="background: rgba(239, 68, 68, 0.2); border: 1px solid #ef4444; color: #ef4444; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: bold; transition: all 0.2s;"
-                        onmouseover="this.style.background='rgba(239, 68, 68, 0.4)'"
-                        onmouseout="this.style.background='rgba(239, 68, 68, 0.2)'">🔄 Reset Drawdown</button>
-                </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 15px; margin-top: 10px;">
-                    <!-- Drawdown -->
-                    <div>
-                        <div style="font-size: 0.9rem; color: #9ca3af; margin-bottom: 4px;">Drawdown</div>
-                        <div id="riskDrawdown" style="font-size: 1.5rem; font-weight: bold; color: #10b981;">0.0%</div>
-                        <div
-                            style="margin-top: 6px; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden;">
-                            <div id="riskDrawdownBar"
-                                style="height: 100%; width: 0%; background: #10b981; border-radius: 3px; transition: width 0.5s;">
-                            </div>
-                        </div>
-                        <div style="font-size: 0.8rem; color: #6b7280; margin-top: 2px;">Límite: <span
-                                id="riskLimit">25</span>%</div>
-                    </div>
-                    <!-- Peak Balance -->
-                    <div>
-                        <div style="font-size: 0.9rem; color: #9ca3af; margin-bottom: 4px;">Peak Balance</div>
-                        <div id="riskPeakBalance" style="font-size: 1.5rem; font-weight: bold; color: #fff;">$0</div>
-                    </div>
-                    <!-- Consecutive Losses -->
-                    <div>
-                        <div style="font-size: 0.9rem; color: #9ca3af; margin-bottom: 4px;">Losses Consecutivos</div>
-                        <div id="riskConsecLosses" style="font-size: 1.5rem; font-weight: bold; color: #10b981;">0</div>
-                    </div>
-                    <!-- Status -->
-                    <div>
-                        <div style="font-size: 0.9rem; color: #9ca3af; margin-bottom: 4px;">Estado</div>
-                        <div id="riskStatus" style="font-size: 1.2rem; font-weight: bold; color: #10b981;">✅ Operando
-                        </div>
-                    </div>
-                </div>
-            </div><!-- end right column -->
-        </div><!-- end side-by-side grid -->
-
-        <div class="trades-table">
-            <h3 style="margin-bottom: 10px; color: #fff; font-size: 0.95rem;">📈 R_100 Candlestick Chart
-                <!-- Date Navigation -->
-                <span
-                    style="float: right; display: inline-flex; align-items: center; gap: 8px; font-size: 0.8rem; font-weight: normal;">
-                    <label style="color: #aaa;">Desde:</label>
-                    <input type="date" id="chartStartDate" value=""
-                        style="background: #1e1e2e; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 2px 6px; font-size: 0.8rem;">
-                    <label style="color: #aaa;">Hasta:</label>
-                    <input type="date" id="chartEndDate" value=""
-                        style="background: #1e1e2e; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 2px 6px; font-size: 0.8rem;">
-                    <button onclick="loadDateRange()"
-                        style="background: #3b82f6; color: #fff; border: none; border-radius: 4px; padding: 3px 10px; cursor: pointer; font-size: 0.8rem;">📅
-                        Cargar</button>
-                    <button onclick="goLive()" id="goLiveBtn"
-                        style="background: #10b981; color: #fff; border: none; border-radius: 4px; padding: 3px 10px; cursor: pointer; font-size: 0.8rem;">⚡
-                        Live</button>
-                </span>
-            </h3>
-            <div id="chartContainer" style="height: 500px; position: relative;"></div>
-
-            <!-- Hurst Exponent & Confidence Thermometer Charts -->
-            <div style="display: flex; flex-direction: column; width: 100%; gap: 20px; margin-top: 45px;">
-                <div style="padding-top: 15px;">
-                    <h3 style="margin: 0 0 5px 0; color: #ffa500; font-size: 1rem;">🔮 Hurst Exponent (Market Regime)
-                    </h3>
-                    <div style="font-size: 0.75rem; margin-bottom: 8px; color: #888;">
-                        <span style="color: #ffa500;">━ Hurst Lento (R/S)</span> &nbsp;
-                        <span style="color: #00e5ff;">━ Hurst Rápido (VR)</span> &nbsp;
-                        <span style="color: #ef4444;">■ <0.45 Reversión</span> &nbsp;
-                                <span style="color: #eab308;">■ 0.45-0.65 Random</span> &nbsp;
-                                <span style="color: #10b981;">■ >0.65 Tendencia</span>
-                    </div>
-                    <div id="hurstChartContainer" style="height: 150px; position: relative; margin-bottom: 20px;"></div>
-                </div>
-                <div>
-                    <h3 style="margin: 0 0 5px 0; color: #fbbf24; font-size: 1rem;">🌡️ Confidence & Direction
-                    </h3>
-                    <div style="font-size: 0.75rem; margin-bottom: 8px; color: #888;">
-                        <span style="color: #10b981;">▲ CALL</span> &nbsp;
-                        <span style="color: #ef4444;">▼ PUT</span> &nbsp;
-                        <span style="color: #9ca3af;">— HOLD</span>
-                    </div>
-                    <div id="confidenceChartContainer" style="height: 150px; position: relative; margin-bottom: 20px;">
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="trades-table" style="margin-top: 30px; display: none;">
-            <h2 style="margin-bottom: 20px; color: #fff;">📊 Historical Data Chart (For Simulation)</h2>
-            <div id="historicalChartContainer" style="height: 750px; position: relative;"></div>
-        </div>
-
-        <div class="trades-table">
-            <h3 style="margin-bottom: 10px; color: #fff; font-size: 0.95rem;">Recent Trades</h3>
-            <div id="tradesContent" class="loading">
-                <div class="pulse">Loading trades...</div>
-            </div>
-        </div>
-
-        <div class="last-updated" id="lastUpdated">
-            Last updated: Never
-        </div>
-    </div>
-
     <script>
         console.log('🚀 DASHBOARD SCRIPT LOADED - v_1771136372_FINAL_FIX');
         const API_BASE = '/deriv/api';
@@ -610,7 +35,7 @@
             const container = document.getElementById('chartContainer');
             chart = LightweightCharts.createChart(container, {
                 width: container.clientWidth,
-                height: 500,
+                height: 450,
                 layout: {
                     background: { type: 'solid', color: 'rgba(17, 24, 39, 0.5)' },
                     textColor: '#d1d5db',
@@ -642,15 +67,6 @@
                 },
             });
 
-            // Configure the main candlestick price scale to use full chart height
-            chart.priceScale('right').applyOptions({
-                scaleMargins: {
-                    top: 0.05,
-                    bottom: 0.05,
-                },
-                autoScale: true,
-            });
-
             candleSeries = chart.addCandlestickSeries({
                 upColor: '#00ffaa',
                 downColor: '#ff4500',
@@ -661,11 +77,26 @@
 
             // Hurst display removed - shown in metrics panel instead
 
-            // O-U Deviation histogram — REMOVED from main chart
-            // It was stretching the Y-axis from 0 to 1100 because its values (0-3σ)
-            // are far from candle prices (~800). O-U is shown in indicator panels instead.
-            // Keep the variable so setData calls don't crash
-            window.ouHistogramSeries = { setData: () => { } };
+            // O-U Deviation histogram in bottom pane (20% of chart height)
+            window.ouHistogramSeries = chart.addHistogramSeries({
+                color: '#60a5fa',
+                priceFormat: {
+                    type: 'custom',
+                    formatter: (price) => price.toFixed(2) + 'σ',
+                },
+                priceScaleId: 'ou',
+            });
+            window.ouHistogramSeries.setData([]);  // Initialize empty to prevent TradingView null render
+
+            // Configure O-U price scale
+            chart.priceScale('ou').applyOptions({
+                scaleMargins: {
+                    top: 0.9,    // Starts at 90% from top (bottom pane)
+                    bottom: 0,   // Ends at bottom
+                },
+                borderVisible: true,
+                borderColor: 'rgba(96, 165, 250, 0.3)',
+            });
 
             let _allChartsReady = false;
             const resizeCharts = () => {
@@ -918,16 +349,8 @@
             });
 
             // Add EMA Lines
-            const ema9Series = chart.addLineSeries({
-                color: '#ffd700',  // gold — fast
-                lineWidth: 1,
-                crosshairMarkerVisible: false,
-                lastValueVisible: false,
-                priceLineVisible: false,
-            });
-
             const ema21Series = chart.addLineSeries({
-                color: '#00ffaa',  // cyan — mid
+                color: '#00ffaa',
                 lineWidth: 2,
                 crosshairMarkerVisible: false,
                 lastValueVisible: false,
@@ -935,14 +358,13 @@
             });
 
             const ema50Series = chart.addLineSeries({
-                color: '#ff4500',  // red/orange — slow
+                color: '#ff4500',
                 lineWidth: 2,
                 crosshairMarkerVisible: false,
                 lastValueVisible: false,
                 priceLineVisible: false,
             });
 
-            window.ema9Series = ema9Series;
             window.ema21Series = ema21Series;
             window.ema50Series = ema50Series;
 
@@ -965,9 +387,15 @@
             });
             window.bbUpperSeries = bbUpperSeries;
             window.bbLowerSeries = bbLowerSeries;
-            // Trade markers are set directly on candleSeries — no overlay needed
-            // (The old markerOverlay LineSeries was causing Y-axis distortion
-            //  because markers at timestamps without data rendered at Y=0)
+            // Invisible overlay series for trade markers (renders ON TOP of EMAs)
+            const markerOverlay = chart.addLineSeries({
+                color: 'transparent',
+                lineWidth: 0,
+                lastValueVisible: false,
+                priceLineVisible: false,
+                crosshairMarkerVisible: false,
+            });
+            window.markerOverlay = markerOverlay;
             window.hurstRef045 = hurstRef045;
             window.hurstRef065 = hurstRef065;
 
@@ -976,6 +404,7 @@
             ema50Series.setData([]);
             bbUpperSeries.setData([]);
             bbLowerSeries.setData([]);
+            markerOverlay.setData([]);
             hurstLineSeries.setData([]);
             hurstFastLineSeries.setData([]);
 
@@ -1006,7 +435,7 @@
 
             try {
                 // 1. Fetch Data
-                const analysisResp = await fetch(`${API_BASE}/analysis-history?limit=500`);
+                const analysisResp = await fetch(`${API_BASE}/analysis-history?limit=5000`);
                 if (!analysisResp.ok) throw new Error('Analysis API Failed');
                 const analysisData = await analysisResp.json();
 
@@ -1126,7 +555,7 @@
                 }
 
                 // 4. Fetch Candles
-                const candlesResp = await fetch(`${API_BASE}/candles?limit=500`);
+                const candlesResp = await fetch(`${API_BASE}/candles?limit=3000`);
                 let candles = [];
                 if (candlesResp.ok) {
                     candles = await candlesResp.json();
@@ -1344,44 +773,41 @@
                 }
 
                 // Update Charts (dedup to prevent lightweight-charts crash on duplicate timestamps)
-                // NOTE: EMAs are drawn by fetchAndUpdateChart() from DB — do NOT set them here
-                // to avoid flickering between client-side and DB-side calculations.
-                // Only redraw Hurst/OU/Confidence when data count changes (prevents flickering)
-                const hurstHash = `${hurstData.length}-${hurstFastData.length}-${ouData.length}`;
-                if (hurstHash !== window._lastHurstHash) {
-                    window._lastHurstHash = hurstHash;
-                    if (window.hurstLineSeries) window.hurstLineSeries.setData(dedup(hurstData));
-                    if (window.hurstFastLineSeries) window.hurstFastLineSeries.setData(dedup(hurstFastData));
+                if (window.ema21Series) window.ema21Series.setData(dedup(ema21Data));
+                if (window.ema50Series) window.ema50Series.setData(dedup(ema50Data));
+                if (window.bbUpperSeries) window.bbUpperSeries.setData(dedup(bbUpperData));
+                if (window.bbLowerSeries) window.bbLowerSeries.setData(dedup(bbLowerData));
+                if (window.hurstLineSeries) window.hurstLineSeries.setData(dedup(hurstData));
+                if (window.hurstFastLineSeries) window.hurstFastLineSeries.setData(dedup(hurstFastData));
 
-                    // Populate regime bands using hurst timestamps
-                    if (hurstData.length > 0) {
-                        const bandTimes = hurstData.map(d => d.time);
-                        const firstTime = bandTimes[0];
-                        const lastTime = bandTimes[bandTimes.length - 1];
-                        if (window.hurstBandRed) window.hurstBandRed.setData([
-                            { time: firstTime, value: 0.45 },
-                            { time: lastTime, value: 0.45 }
-                        ]);
-                        if (window.hurstBandYellow) window.hurstBandYellow.setData([
-                            { time: firstTime, value: 0.65 },
-                            { time: lastTime, value: 0.65 }
-                        ]);
-                        if (window.hurstBandGreen) window.hurstBandGreen.setData([
-                            { time: firstTime, value: 0.80 },
-                            { time: lastTime, value: 0.80 }
-                        ]);
-                        if (window.hurstRef045) window.hurstRef045.setData([
-                            { time: firstTime, value: 0.45 },
-                            { time: lastTime, value: 0.45 }
-                        ]);
-                        if (window.hurstRef065) window.hurstRef065.setData([
-                            { time: firstTime, value: 0.65 },
-                            { time: lastTime, value: 0.65 }
-                        ]);
-                    }
-                    if (window.ouHistogramSeries) window.ouHistogramSeries.setData(ouData);
-                    if (window.confidenceSeries) window.confidenceSeries.setData(confidenceData);
+                // Populate regime bands using hurst timestamps
+                if (hurstData.length > 0) {
+                    const bandTimes = hurstData.map(d => d.time);
+                    const firstTime = bandTimes[0];
+                    const lastTime = bandTimes[bandTimes.length - 1];
+                    if (window.hurstBandRed) window.hurstBandRed.setData([
+                        { time: firstTime, value: 0.45 },
+                        { time: lastTime, value: 0.45 }
+                    ]);
+                    if (window.hurstBandYellow) window.hurstBandYellow.setData([
+                        { time: firstTime, value: 0.65 },
+                        { time: lastTime, value: 0.65 }
+                    ]);
+                    if (window.hurstBandGreen) window.hurstBandGreen.setData([
+                        { time: firstTime, value: 0.80 },
+                        { time: lastTime, value: 0.80 }
+                    ]);
+                    if (window.hurstRef045) window.hurstRef045.setData([
+                        { time: firstTime, value: 0.45 },
+                        { time: lastTime, value: 0.45 }
+                    ]);
+                    if (window.hurstRef065) window.hurstRef065.setData([
+                        { time: firstTime, value: 0.65 },
+                        { time: lastTime, value: 0.65 }
+                    ]);
                 }
+                if (window.ouHistogramSeries) window.ouHistogramSeries.setData(ouData);
+                if (window.confidenceSeries) window.confidenceSeries.setData(confidenceData);
                 // Track indicator bar count for sync offset
                 window._indicatorBarCount = hurstData.length;
                 if (window._setChartReady) window._setChartReady(); // Enable resize handler now that data exists
@@ -1490,8 +916,11 @@
                     .filter(c => c.open != null && c.high != null && c.low != null && c.close != null && c.time != null)
                     .map(c => ({ ...c, time: c.time - 18000 })));
                 candleSeries.setData(candlesCOL);
-                candleSeries.setMarkers([]);
                 _lastCandleData = [];
+                if (window.markerOverlay) {
+                    window.markerOverlay.setData(candles.map(c => ({ time: c.time - 18000, value: c.close })));
+                    window.markerOverlay.setMarkers([]);
+                }
                 chart.timeScale().fitContent();
                 console.log('[loadDateRange] Candles set OK');
 
@@ -1500,21 +929,19 @@
                     const indResp = await fetch(`${API_BASE}/candles-with-indicators?start_date=${startDate}&end_date=${endDate}`);
                     if (indResp.ok) {
                         const indData = await indResp.json();
-                        const ema9Data = [], ema21Data = [], ema50Data = [], bbUpperData = [], bbLowerData = [];
+                        const ema21Data = [], ema50Data = [], bbUpperData = [], bbLowerData = [];
                         indData.forEach(d => {
                             const t = d.time - 18000;
-                            if (d.ema_9) ema9Data.push({ time: t, value: d.ema_9 });
                             if (d.ema_21) ema21Data.push({ time: t, value: d.ema_21 });
                             if (d.ema_50) ema50Data.push({ time: t, value: d.ema_50 });
                             if (d.bollinger_upper) bbUpperData.push({ time: t, value: d.bollinger_upper });
                             if (d.bollinger_lower) bbLowerData.push({ time: t, value: d.bollinger_lower });
                         });
-                        if (window.ema9Series) window.ema9Series.setData(ema9Data);
                         if (window.ema21Series) window.ema21Series.setData(ema21Data);
                         if (window.ema50Series) window.ema50Series.setData(ema50Data);
                         if (window.bbUpperSeries) window.bbUpperSeries.setData(bbUpperData);
                         if (window.bbLowerSeries) window.bbLowerSeries.setData(bbLowerData);
-                        console.log(`[loadDateRange] EMA9/21/50 + BB set OK (${ema21Data.length} pts)`);
+                        console.log(`[loadDateRange] EMA/BB set OK (${ema21Data.length} pts)`);
                     }
                 } catch (e) { console.warn('[loadDateRange] EMA/BB error:', e); }
 
@@ -1570,46 +997,29 @@
                     }
                 } catch (e) { console.warn('[loadDateRange] Analysis error:', e); }
 
-                // 4. Trade markers (FILTERED to loaded candle range)
+                // 4. Trade markers
                 try {
-                    const tradesResp = await fetch(`${API_BASE}/trades?limit=500`);
+                    const tradesResp = await fetch(`${API_BASE}/trades?limit=200`);
                     const trades = await tradesResp.json();
-                    if (trades && trades.length > 0 && candlesCOL.length > 0) {
-                        const minCandleTime = candlesCOL[0].time;
-                        const maxCandleTime = candlesCOL[candlesCOL.length - 1].time;
-
-                        const rawMarkers = trades
+                    if (trades && trades.length > 0 && window.markerOverlay) {
+                        const markers = trades
                             .filter(t => t.entry_time)
                             .map(t => {
+                                // Shift UTC → Colombia (UTC-5 = -18000s), then snap to 60s candle grid
                                 const utcTs = Math.floor(new Date(t.entry_time).getTime() / 1000);
                                 const colTs = utcTs - 18000;
-                                const time = Math.floor(colTs / 60) * 60;
-                                const isCall = t.direction === 'CALL';
-                                const pnlVal = t.pnl || 0;
-                                const pnlTxt = pnlVal >= 0 ? `+${pnlVal.toFixed(0)}` : pnlVal.toFixed(0);
+                                const time = Math.floor(colTs / 60) * 60;  // snap to candle boundary
                                 return {
                                     time,
-                                    position: isCall ? 'belowBar' : 'aboveBar',
+                                    position: t.direction === 'CALL' ? 'belowBar' : 'aboveBar',
                                     color: t.outcome === 'WIN' ? '#00ff88' : t.outcome === 'LOSS' ? '#ff4444' : '#fbbf24',
-                                    shape: isCall ? 'arrowUp' : 'arrowDown',
-                                    text: `${isCall ? 'C' : 'P'} ${pnlTxt}`,
-                                    size: 1,
+                                    shape: t.direction === 'CALL' ? 'arrowUp' : 'arrowDown',
+                                    text: `${t.direction} $${(t.pnl || 0).toFixed(2)}`,
+                                    size: 2,
                                 };
                             })
-                            .filter(m => m.time >= minCandleTime && m.time <= maxCandleTime)
                             .sort((a, b) => a.time - b.time);
-
-                        const markersMap = new Map();
-                        for (const m of rawMarkers) {
-                            if (markersMap.has(m.time)) {
-                                const existing = markersMap.get(m.time);
-                                existing.text += ` | ${m.text}`;
-                            } else {
-                                markersMap.set(m.time, { ...m });
-                            }
-                        }
-                        const markers = Array.from(markersMap.values());
-                        candleSeries.setMarkers(markers);
+                        window.markerOverlay.setMarkers(markers);
                     }
                 } catch (e) { console.warn('[loadDateRange] Trades error:', e); }
 
@@ -1638,7 +1048,7 @@
             if (_historicalMode) return; // Skip live updates in historical mode
             try {
                 // Increased limit to 1500 to show ~24h of history on main chart
-                const response = await fetch(`${API_BASE}/candles?limit=500`);
+                const response = await fetch(`${API_BASE}/candles?limit=1500`);
                 const candles = await response.json();
 
                 // Re-check: user may have switched to historical mode while we were fetching
@@ -1657,114 +1067,56 @@
                         candleSeries.setData(candlesCOL);
                         chart.timeScale().scrollToRealTime();
                     } else {
-                        // Gap detection: if newest API candle is >3 min ahead of last rendered,
-                        // do a full reset to auto-recover from backend restarts or fetch errors
-                        const lastOldTime = _lastCandleData[_lastCandleData.length - 1].time;
-                        const newestTime = candlesCOL[candlesCOL.length - 1].time;
-                        const gapSeconds = newestTime - lastOldTime;
-
-                        if (gapSeconds > 180) {
-                            // Gap detected — full reset to close the visual gap
-                            console.warn(`[chart] Gap detected (${(gapSeconds / 60).toFixed(0)} min) — doing full setData reset`);
-                            candleSeries.setData(candlesCOL);
-                            window._lastOverlayHash = '';  // Force overlay redraw
-                            window._lastIndicatorHash = '';  // Force indicator charts redraw
-                        } else {
-                            // Normal incremental: only update last candle + any new ones
-                            for (const c of candlesCOL) {
-                                if (c.time >= lastOldTime && c.open != null && c.high != null && c.low != null && c.close != null) {
-                                    candleSeries.update(c);
-                                }
+                        // Incremental: only update last candle + any new ones
+                        // This does NOT reset the viewport
+                        const lastOldTime = _lastCandleData.length > 0 ? _lastCandleData[_lastCandleData.length - 1].time : 0;
+                        for (const c of candlesCOL) {
+                            if (c.time >= lastOldTime && c.open != null && c.high != null && c.low != null && c.close != null) {
+                                candleSeries.update(c);
                             }
                         }
                     }
                     _lastCandleData = candlesCOL;
                     window._mainBarCount = candlesCOL.length;
 
-                    // Detect if candle data actually changed (new candle arrived)
-                    const newCandleHash = `${candlesCOL.length}-${candlesCOL[candlesCOL.length - 1].time}`;
-                    const candlesChanged = newCandleHash !== window._lastCandleHash;
-                    window._lastCandleHash = newCandleHash;
+                    // Feed overlay series with candle close prices (invisible line, for marker z-ordering)
+                    if (window.markerOverlay) {
+                        window.markerOverlay.setData(candlesCOL.filter(c => c.close != null).map(c => ({ time: c.time, value: c.close })));
+                    }
 
-                    // Fetch EMA9/21/50 + Bollinger Bands for live overlay (uses limit mode)
+                    // Fetch recent trades and add markers
                     try {
-                        const indResp = await fetch(`${API_BASE}/candles-with-indicators?limit=500`);
-                        if (indResp.ok) {
-                            const indData = await indResp.json();
-                            const ema9Data = [], ema21Data = [], ema50Data = [], bbUpperData = [], bbLowerData = [];
-                            indData.forEach(d => {
-                                if (d.time == null) return;
-                                const t = d.time - 18000;  // UTC → Colombia
-                                if (d.ema_9 != null && isFinite(d.ema_9)) ema9Data.push({ time: t, value: d.ema_9 });
-                                if (d.ema_21 != null && isFinite(d.ema_21)) ema21Data.push({ time: t, value: d.ema_21 });
-                                if (d.ema_50 != null && isFinite(d.ema_50)) ema50Data.push({ time: t, value: d.ema_50 });
-                                if (d.bollinger_upper != null && isFinite(d.bollinger_upper)) bbUpperData.push({ time: t, value: d.bollinger_upper });
-                                if (d.bollinger_lower != null && isFinite(d.bollinger_lower)) bbLowerData.push({ time: t, value: d.bollinger_lower });
-                            });
-                            // Only redraw overlays when data count changes (new candle arrived)
-                            // This prevents flickering from full setData() every 5 seconds
-                            const newHash = `${ema21Data.length}-${ema50Data.length}-${bbUpperData.length}`;
-                            if (newHash !== window._lastOverlayHash) {
-                                window._lastOverlayHash = newHash;
-                                if (window.ema9Series) window.ema9Series.setData(dedup(ema9Data));
-                                if (window.ema21Series) window.ema21Series.setData(dedup(ema21Data));
-                                if (window.ema50Series) window.ema50Series.setData(dedup(ema50Data));
-                                if (window.bbUpperSeries) window.bbUpperSeries.setData(dedup(bbUpperData));
-                                if (window.bbLowerSeries) window.bbLowerSeries.setData(dedup(bbLowerData));
-                            }
-                        }
-                    } catch (e) { console.warn('[live] EMA/BB error:', e); }
-
-                    // Fetch recent trades and add markers (FILTERED to candle time range)
-                    // Only re-fetch markers when candle data changed (new candle) to avoid flicker
-                    if (candlesChanged) {
-                        try {
-                            const tradesResp = await fetch(`${API_BASE}/trades?limit=50`);
-                            const trades = await tradesResp.json();
-                            if (trades && trades.length > 0 && candlesCOL.length > 0) {
-                                // Determine the time range of loaded candles
-                                const minCandleTime = candlesCOL[0].time;
-                                const maxCandleTime = candlesCOL[candlesCOL.length - 1].time;
-
-                                const rawMarkers = trades
-                                    .filter(t => t.entry_time)
-                                    .map(t => {
-                                        const utcTs = Math.floor(new Date(t.entry_time).getTime() / 1000);
-                                        const colTs = utcTs - 18000;
-                                        const time = Math.floor(colTs / 60) * 60;
-                                        const isCall = t.direction === 'CALL';
-                                        const pnlVal = t.pnl != null ? t.pnl : 0;
-                                        const pnlTxt = pnlVal >= 0 ? `+${pnlVal.toFixed(0)}` : pnlVal.toFixed(0);
-                                        return {
-                                            time,
-                                            position: isCall ? 'belowBar' : 'aboveBar',
-                                            color: t.outcome === 'WIN' ? '#00ff88' : t.outcome === 'LOSS' ? '#ff4444' : '#fbbf24',
-                                            shape: isCall ? 'arrowUp' : 'arrowDown',
-                                            text: `${isCall ? 'C' : 'P'} ${pnlTxt}`,
-                                            size: 1,
-                                        };
-                                    })
-                                    // CRITICAL: only keep markers within the candle data range
-                                    .filter(m => m.time >= minCandleTime && m.time <= maxCandleTime)
-                                    .sort((a, b) => a.time - b.time);
-
-                                const markersMap = new Map();
-                                for (const m of rawMarkers) {
-                                    if (markersMap.has(m.time)) {
-                                        const existing = markersMap.get(m.time);
-                                        existing.text += ` | ${m.text}`;
-                                    } else {
-                                        markersMap.set(m.time, { ...m });
-                                    }
-                                }
-                                const markers = Array.from(markersMap.values());
-
+                        const tradesResp = await fetch(`${API_BASE}/trades?limit=50`);
+                        const trades = await tradesResp.json();
+                        if (trades && trades.length > 0) {
+                            const markers = trades
+                                .filter(t => t.entry_time)
+                                .map(t => {
+                                    // Shift UTC → Colombia (UTC-5 = -18000s), then snap to 60s candle grid
+                                    const utcTs = Math.floor(new Date(t.entry_time).getTime() / 1000);
+                                    const colTs = utcTs - 18000;
+                                    const time = Math.floor(colTs / 60) * 60;  // snap to candle boundary
+                                    const isCall = t.direction === 'CALL';
+                                    const pnl = t.pnl != null ? `$${t.pnl.toFixed(2)}` : '';
+                                    return {
+                                        time,
+                                        position: isCall ? 'belowBar' : 'aboveBar',
+                                        color: t.outcome === 'WIN' ? '#00ff88' : t.outcome === 'LOSS' ? '#ff4444' : '#fbbf24',
+                                        shape: isCall ? 'arrowUp' : 'arrowDown',
+                                        text: `${t.direction} ${pnl}`,
+                                        size: 2,
+                                    };
+                                })
+                                .sort((a, b) => a.time - b.time);
+                            if (window.markerOverlay) {
+                                window.markerOverlay.setMarkers(markers);
+                            } else {
                                 candleSeries.setMarkers(markers);
                             }
-                        } catch (e) {
-                            console.error('Error fetching trades for markers:', e);
                         }
-                    } // end candlesChanged guard
+                    } catch (e) {
+                        console.error('Error fetching trades for markers:', e);
+                    }
                 }
             } catch (error) {
                 console.error('Error fetching candles:', error);
@@ -1985,9 +1337,10 @@
             const colors = {
                 'bear_reject_v1': '#dc2626',  // red
                 'bullish_v5': '#fbbf24',  // gold
-                'bearish_v5': '#a855f7',  // purple
                 'bull_soldiers_v1': '#16a34a',  // green
-
+                'malicia_v1': '#a855f7',  // purple
+                'malicia_bajista_v1': '#8b5cf6',  // violet
+                'smart_money_v1': '#0ea5e9',  // cyan
             };
             if (checkbox.checked) {
                 dot.style.background = colors[checkbox.value] || '#10b981';
@@ -2043,16 +1396,18 @@
         const ENGINE_ICONS = {
             'bear_reject_v1': '🔴',
             'bullish_v5': '🐂',
-            'bearish_v5': '🐻',
             'bull_soldiers_v1': '🟢',
-
+            'malicia_v1': '🦊',
+            'malicia_bajista_v1': '🐻',
+            'smart_money_v1': '🏦'
         };
         const ENGINE_LABELS = {
             'bear_reject_v1': 'Three Red Crows',
             'bullish_v5': 'Ultimate Bull v6',
-            'bearish_v5': 'Ultimate Bear v5',
             'bull_soldiers_v1': 'Three White Soldiers',
-
+            'malicia_v1': 'Malicia Indígena',
+            'malicia_bajista_v1': 'Malicia Bajista',
+            'smart_money_v1': 'Smart Money'
         };
         const SIGNAL_STYLES = {
             'CALL': { bg: 'rgba(16,185,129,0.2)', color: '#10b981', icon: '📈' },
@@ -2390,6 +1745,3 @@
             // fetchAndUpdateHistoricalChart(); // Disabled — historical_candles table does not exist
         }, 300000);
     </script>
-</body>
-
-</html>

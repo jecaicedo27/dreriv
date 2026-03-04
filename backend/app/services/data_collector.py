@@ -43,13 +43,12 @@ class DataCollector:
             quote = float(tick_data['quote'])
             symbol = tick_data['symbol']
             
-            # Save to database (async would be better)
-            raw_tick = RawTick(
-                symbol=symbol,
-                epoch=epoch,
-                quote=quote
+            # Save raw tick with ON CONFLICT DO NOTHING to avoid UniqueViolation crash loops
+            from sqlalchemy import text as sa_text
+            self.db.execute(
+                sa_text("INSERT INTO raw_ticks (symbol, epoch, quote) VALUES (:s, :e, :q) ON CONFLICT DO NOTHING"),
+                {"s": symbol, "e": epoch, "q": quote}
             )
-            self.db.add(raw_tick)
             self.db.commit()
             
             # Add to buffer
@@ -63,6 +62,10 @@ class DataCollector:
             await self._update_candle(epoch, quote)
             
         except Exception as e:
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
             logger.error(f"❌ Error processing tick: {e}")
     
     async def _update_candle(self, epoch: int, quote: float):
@@ -103,20 +106,30 @@ class DataCollector:
         try:
             candle_close_time = self.candle_start_time + timedelta(seconds=self.timeframe_seconds)
             
-            # Create candle
-            candle = Candle(
-                symbol=self.symbol,
-                timeframe=f"{self.timeframe_seconds}s",
-                open_time=self.candle_start_time,
-                close_time=candle_close_time,
-                open=self.current_candle['open'],
-                high=self.current_candle['high'],
-                low=self.current_candle['low'],
-                close=self.current_candle['close'],
-                volume=len(self.current_candle['ticks'])
+            # Use upsert to avoid duplicate candle errors
+            from sqlalchemy import text as sa_text
+            self.db.execute(
+                sa_text("""
+                    INSERT INTO candles (symbol, timeframe, open_time, close_time, open, high, low, close, volume)
+                    VALUES (:sym, :tf, :ot, :ct, :o, :h, :l, :c, :v)
+                    ON CONFLICT (symbol, timeframe, open_time) DO UPDATE SET
+                        high = GREATEST(candles.high, EXCLUDED.high),
+                        low = LEAST(candles.low, EXCLUDED.low),
+                        close = EXCLUDED.close,
+                        volume = EXCLUDED.volume
+                """),
+                {
+                    "sym": self.symbol,
+                    "tf": f"{self.timeframe_seconds}s",
+                    "ot": self.candle_start_time,
+                    "ct": candle_close_time,
+                    "o": self.current_candle['open'],
+                    "h": self.current_candle['high'],
+                    "l": self.current_candle['low'],
+                    "c": self.current_candle['close'],
+                    "v": len(self.current_candle['ticks']),
+                }
             )
-            
-            self.db.add(candle)
             self.db.commit()
             
             logger.debug(f"🕯️ Candle saved: {self.symbol} @ {self.candle_start_time}")
@@ -125,6 +138,10 @@ class DataCollector:
             asyncio.create_task(self._calculate_indicators())
             
         except Exception as e:
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
             logger.error(f"❌ Error finalizing candle: {e}")
     
     async def _calculate_indicators(self):
@@ -244,6 +261,10 @@ class DataCollector:
             self.db.commit()
             
         except Exception as e:
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
             logger.error(f"❌ Error calculating indicators: {e}")
     
     def get_recent_candles(self, count: int = 200) -> pd.DataFrame:

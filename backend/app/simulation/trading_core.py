@@ -35,11 +35,11 @@ class TradingCore:
         ai_provider: str = "groq",
         hurst_min: float = 0.6,
         hurst_max: float = 0.7,
+        slope_min: float = 0.0,
+        slope_lookback: int = 20,
     ) -> Dict[str, Any]:
         """
         Analyze candles and return a trading signal.
-        
-        This is THE function. One brain, one decision path.
         
         Args:
             engine: Layer1SignalEngine instance (caller manages lifecycle)
@@ -47,13 +47,25 @@ class TradingCore:
             symbol: Trading symbol
             use_groq: Whether to use AI Layer 2
             ai_provider: Which AI provider
-            hurst_min: Min Hurst for trending trades (default 0.6)
-            hurst_max: Max Hurst for trending trades (default 0.7)
-            
-        Returns:
-            { action, confidence, entry_price, groq_used, ai_provider,
-              l1_signal, l1_confidence, reasoning, groq_reasoning, hurst }
+            hurst_min: Min Hurst for trending trades
+            hurst_max: Max Hurst for trending trades
+            slope_min: Min |EMA21 slope| to trade (0 = disabled)
+            slope_lookback: Candles for slope regression window
         """
+        # ===== SLOPE FILTER =====
+        if slope_min > 0:
+            from app.analysis.indicators import TechnicalIndicators
+            slope_info = TechnicalIndicators.compute_ema_slope(df, lookback=slope_lookback)
+            if slope_info['slope_abs'] < slope_min:
+                entry_price = float(df.iloc[-1]['close'])
+                return {
+                    'action': 'HOLD', 'confidence': 0.0, 'entry_price': round(entry_price, 2),
+                    'groq_used': False, 'ai_provider': 'none', 'l1_signal': 'HOLD',
+                    'l1_confidence': 0.0,
+                    'reasoning': f"Mercado lateral (pendiente={slope_info['slope']:.4f} < {slope_min})",
+                    'groq_reasoning': '', 'hurst': 0.5,
+                }
+
         # ===== Window: last 250 candles =====
         start_idx = max(0, len(df) - 250)
         window = df.iloc[start_idx:].copy()
@@ -174,8 +186,25 @@ class TradingCore:
         ai_provider: str = "groq",
         hurst_min: float = 0.6,
         hurst_max: float = 0.7,
+        slope_min: float = 0.0,
+        slope_lookback: int = 20,
     ) -> Dict[str, Any]:
         """Async version of analyze() — for use in async contexts (bot_step, replay_bot)."""
+        # ===== SLOPE FILTER =====
+        if slope_min > 0:
+            from app.analysis.indicators import TechnicalIndicators
+            slope_info = TechnicalIndicators.compute_ema_slope(df, lookback=slope_lookback)
+            if slope_info['slope_abs'] < slope_min:
+                entry_price = float(df.iloc[-1]['close'])
+                return {
+                    'action': 'HOLD', 'confidence': 0.0, 'entry_price': round(entry_price, 2),
+                    'groq_used': False, 'ai_provider': 'none', 'l1_signal': 'HOLD',
+                    'l1_confidence': 0.0,
+                    'reasoning': f"Mercado lateral (pendiente={slope_info['slope']:.4f} < {slope_min})",
+                    'groq_reasoning': '', 'hurst': 0.5,
+                    'rsi_14': 0, 'ema_9': 0, 'ema_21': 0, 'macd_histogram': 0, 'bb_width': 0,
+                }
+
         # ===== Window: last 250 candles =====
         start_idx = max(0, len(df) - 250)
         window = df.iloc[start_idx:]

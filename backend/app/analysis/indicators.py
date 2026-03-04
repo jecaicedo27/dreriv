@@ -203,3 +203,41 @@ class TechnicalIndicators:
             'plus_di': float(latest.get('plus_di', 0)),
             'minus_di': float(latest.get('minus_di', 0)),
         }
+
+    @staticmethod
+    def compute_ema_slope(df: pd.DataFrame, lookback: int = 20) -> dict:
+        """
+        Compute the linear regression slope of EMA21 over the last `lookback` candles.
+
+        This is the discrete 'derivative' of the trend line — a positive slope means
+        the market is trending UP, negative means DOWN, near-zero means LATERAL.
+
+        Returns:
+            dict with:
+                slope        float  — price pts per candle (signed)
+                slope_abs    float  — |slope|
+                slope_pct    float  — slope as % of current price per candle
+                direction    str    — 'UP', 'DOWN', or 'FLAT'
+        """
+        result = {'slope': 0.0, 'slope_abs': 0.0, 'slope_pct': 0.0, 'direction': 'FLAT'}
+        try:
+            col = 'ema_21' if 'ema_21' in df.columns else 'close'
+            series = df[col].dropna().tail(lookback)
+            if len(series) < 5:
+                return result
+            n = len(series)
+            x = np.arange(n)
+            y = series.values
+            slope = float(np.polyfit(x, y, 1)[0])
+            current_price = float(y[-1])
+            slope_pct = (slope / current_price * 100) if current_price else 0.0
+            result = {
+                'slope': round(slope, 4),
+                'slope_abs': round(abs(slope), 4),
+                'slope_pct': round(slope_pct, 6),
+                'direction': 'UP' if slope > 0 else 'DOWN' if slope < 0 else 'FLAT',
+            }
+        except Exception as e:
+            logger.debug(f"compute_ema_slope error: {e}")
+        return result
+

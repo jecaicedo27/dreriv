@@ -7,6 +7,9 @@ description: Contract and requirements for creating new trading analysis engines
 
 Every trading engine must fulfill this contract to work with the full system: TradingCore, replay_bot simulations, engine battles, trade-level database persistence, and the live trading bot.
 
+> [!IMPORTANT]
+> **Architecture Rule:** `engine_registry.py` is the SINGLE SOURCE OF TRUTH for all engine parameters (hurst, slope, cooldown, duration, defensive filters). When MODIFYING an existing engine's config, change ONLY `engine_registry.py` — never bot.py, replay_bot.py, or simulation_api.py. See workflow `/engine-config-changes` for the full modification guide.
+
 ---
 
 ## 1. Extend `BaseAnalysisEngine`

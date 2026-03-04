@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>🔬 Simulaciones Forex EUR/USD</title>
+    <script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #0a0e1a;
+            --card: #0d1b3e;
+            --border: rgba(0, 120, 255, 0.2);
+            --blue: #00aaff;
+            --green: #00ffcc;
+            --red: #ff4466;
+            --text: #e0e8ff;
+            --muted: #5a7aaa;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0a0e1a, #0d1b3e 50%, #0a1628);
+            color: var(--text);
+            min-height: 100vh;
+            font-size: 13px;
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 16px;
+            background: rgba(13, 27, 62, 0.95);
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo {
+            font-size: 1rem;
+            font-weight: 700;
+            background: linear-gradient(90deg, #00aaff, #00ffcc);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav a {
+            color: #8ab4ff;
+            text-decoration: none;
+            margin-left: 14px;
+            font-size: 12px;
+        }
+
+        .nav a:hover {
+            color: #00aaff;
+        }
+
+        /* LAYOUT */
+        .layout {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            height: calc(100vh - 44px);
+        }
+
+        .sidebar {
+            padding: 12px;
+            overflow-y: auto;
+            border-right: 1px solid var(--border);
+            background: rgba(10, 20, 50, 0.8);
+        }
+
+        .main-area {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* CONTROLS */
+        .card {
+            background: rgba(13, 27, 62, 0.7);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px;
+            margin-bottom: 10px;
+        }
+
+        .card-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: .08em;
+            color: var(--blue);
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        label {
+            display: block;
+            color: var(--muted);
+            font-size: 11px;
+            margin-bottom: 3px;
+            margin-top: 8px;
+        }
+
+        select,
+        input[type=number] {
+            width: 100%;
+            background: #0a1628;
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 6px;
+            padding: 6px 8px;
+            font-size: 12px;
+            font-family: inherit;
+        }
+
+        .btn-run {
+            width: 100%;
+            background: linear-gradient(90deg, #004db3, #0077ff);
+            border: none;
+            color: #fff;
+            border-radius: 8px;
+            padding: 9px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: .2s;
+            letter-spacing: .03em;
+        }
+
+        .btn-run:hover {
+            opacity: .88;
+        }
+
+        .btn-run:disabled {
+            opacity: .4;
+            cursor: not-allowed;
+        }
+
+        /* SUMMARY STATS */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+        }
+
+        .stat-box {
+            background: rgba(0, 120, 255, 0.07);
+            border-radius: 6px;
+            padding: 8px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--blue);
+        }
+
+        .stat-value.green {
+            color: var(--green);
+        }
+
+        .stat-value.red {
+            color: var(--red);
+        }
+
+        .stat-label {
+            font-size: 10px;
+            color: var(--muted);
+            margin-top: 2px;
+        }
+
+        /* CHART */
+        #chart {
+            flex: 1;
+            width: 100%;
+        }
+
+        /* TRADE LOG */
+        .trade-log {
+            height: 180px;
+            overflow-y: auto;
+            border-top: 1px solid var(--border);
+            padding: 8px 12px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+
+        th {
+            padding: 4px 6px;
+            text-align: left;
+            color: var(--blue);
+            border-bottom: 1px solid var(--border);
+            font-size: 10px;
+            text-transform: uppercase;
+        }
+
+        td {
+            padding: 4px 6px;
+            border-bottom: 1px solid rgba(0, 120, 255, 0.06);
+        }
+
+        .badge {
+            border-radius: 4px;
+            padding: 1px 6px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+
+        .badge.WIN {
+            background: rgba(0, 255, 100, 0.15);
+            color: #00ff88;
+        }
+
+        .badge.LOSS {
+            background: rgba(255, 50, 80, 0.15);
+            color: #ff4466;
+        }
+
+        .badge.CALL {
+            background: rgba(0, 120, 255, 0.2);
+            color: #00aaff;
+        }
+
+        .badge.PUT {
+            background: rgba(255, 80, 120, 0.2);
+            color: #ff6090;
+        }
+
+        /* SPINNER */
+        #spinner {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            color: var(--muted);
+        }
+
+        #status-msg {
+            font-size: 11px;
+            color: var(--muted);
+            margin-top: 6px;
+            min-height: 16px;
+        }
+
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(0, 120, 255, 0.3);
+            border-radius: 4px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <span class="logo">🔬 Simulaciones Forex — EUR/USD</span>
+        <div class="nav">
+            <a href="/deriv/forex">← Dashboard Forex</a>
+            <a href="/deriv/dashboard">📊 R_100</a>
+            <a href="/deriv/simulations">🔬 Sims R_100</a>
+        </div>
+    </header>
+
+    <div class="layout">
+        <!-- SIDEBAR: CONTROLS -->
+        <div class="sidebar">
+            <div class="card">
+                <div class="card-title">⚙️ Configuración</div>
+
+                <label>Fecha (forex_candles)</label>
+                <select id="sel-date">
+                    <option value="">Cargando fechas...</option>
+                </select>
+
+                <label>Motor Forex</label>
+                <select id="sel-engine">
+                    <option value="forex_buydip_v1" selected>💹 forex_buydip_v1 — Buy-the-Dip CALL</option>
+                    <option value="forex_trend_v1">forex_trend_v1 — EMA Alignment</option>
+                    <option value="forex_smart_money_v1">forex_smart_money_v1 — SMC</option>
+                    <option value="forex_session_v1">forex_session_v1 — London ORB</option>
+                </select>
+
+                <label>Stake (USD)</label>
+                <input type="number" id="inp-stake" value="100" min="1" max="10000">
+
+                <label>Payout (%)</label>
+                <input type="number" id="inp-payout" value="85" min="50" max="100">
+
+                <label>Duración (velas)</label>
+                <input type="number" id="inp-dur" value="5" min="1" max="30">
+
+                <button class="btn-run" id="btn-run" onclick="runSim()">▶ SIMULAR</button>
+                <div id="status-msg"></div>
+            </div>
+
+            <!-- SUMMARY -->
+            <div class="card" id="summary-card" style="display:none;">
+                <div class="card-title">📊 Resultado</div>
+                <div class="stat-grid">
+                    <div class="stat-box">
+                        <div class="stat-value" id="s-trades">0</div>
+                        <div class="stat-label">Trades</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="s-wr">0%</div>
+                        <div class="stat-label">Win Rate</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="s-pnl">$0</div>
+                        <div class="stat-label">PnL</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="s-pf">0</div>
+                        <div class="stat-label">Profit Factor</div>
+                    </div>
+                </div>
+                <div style="margin-top:8px;font-size:11px;color:var(--muted);" id="s-detail"></div>
+            </div>
+
+            <!-- HINT -->
+            <div class="card" id="hint-no-data" style="display:none;">
+                <div class="card-title">⚠️ Sin datos</div>
+                <p style="color:var(--muted);font-size:11px;">No hay velas forex para esta fecha.<br>Ve al <a
+                        href="/deriv/forex" style="color:var(--blue);">Dashboard Forex</a> y descarga el historial
+                    primero.</p>
+            </div>
+        </div>
+
+        <!-- MAIN: CHART + TRADES -->
+        <div class="main-area">
+            <div id="spinner">⏳ Ejecutando simulación...</div>
+            <div id="chart"></div>
+            <div class="trade-log">
+                <div class="card-title" style="margin-bottom:6px;">📋 Trades de la simulación</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Vela</th>
+                            <th>Dir</th>
+                            <th>Entrada</th>
+                            <th>Salida</th>
+                            <th>Conf</th>
+                            <th>PnL</th>
+                            <th>Balance</th>
+                            <th>Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="trade-tbody">
+                        <tr>
+                            <td colspan="8" style="color:var(--muted);padding:10px;">Corre una simulación para ver los
+                                trades</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const BASE = '/deriv';
+
+        // ─── CHART SETUP ───────────────────────────────────────────────────────────
+        const chartEl = document.getElementById('chart');
+        const chart = LightweightCharts.createChart(chartEl, {
+            width: chartEl.offsetWidth, height: chartEl.offsetHeight,
+            layout: { background: { color: 'transparent' }, textColor: '#8ab4ff' },
+            grid: { vertLines: { color: '#0d1e40' }, horzLines: { color: '#0d1e40' } },
+            rightPriceScale: { borderColor: '#1a3060' },
+            timeScale: { borderColor: '#1a3060', timeVisible: true },
+        });
+
+        const candleSeries = chart.addCandlestickSeries({
+            upColor: '#00ffcc', downColor: '#ff4466',
+            borderUpColor: '#00ffcc', borderDownColor: '#ff4466',
+            wickUpColor: '#00ffcc', wickDownColor: '#ff4466',
+        });
+        const ema9s = chart.addLineSeries({ color: '#ffaa00', lineWidth: 1, title: 'EMA9' });
+        const ema21s = chart.addLineSeries({ color: '#00aaff', lineWidth: 1, title: 'EMA21' });
+        const ema50s = chart.addLineSeries({ color: '#ff66aa', lineWidth: 1, title: 'EMA50' });
+
+        new ResizeObserver(() => chart.applyOptions({ width: chartEl.offsetWidth, height: chartEl.offsetHeight })).observe(chartEl);
+
+        // ─── LOAD DATES ─────────────────────────────────────────────────────────────
+        async function loadDates() {
+            try {
+                const r = await fetch(`${BASE}/api/forex/simulation/dates`);
+                const d = await r.json();
+                const sel = document.getElementById('sel-date');
+                if (!d.dates || d.dates.length === 0) {
+                    sel.innerHTML = '<option value="">Sin fechas disponibles</option>';
+                    document.getElementById('hint-no-data').style.display = 'block';
+                    return;
+                }
+                sel.innerHTML = d.dates.map(x =>
+                    `<option value="${x.date}">${x.date} (${x.candle_count} velas)</option>`
+                ).join('');
+            } catch (e) { console.warn('Dates load error:', e); }
+        }
+
+        // ─── RUN SIMULATION ──────────────────────────────────────────────────────────
+        async function runSim() {
+            const date = document.getElementById('sel-date').value;
+            const engine = document.getElementById('sel-engine').value;
+            const stake = parseFloat(document.getElementById('inp-stake').value);
+            const payout = parseFloat(document.getElementById('inp-payout').value) / 100;
+            const dur = parseInt(document.getElementById('inp-dur').value);
+
+            if (!date) { alert('Selecciona una fecha'); return; }
+
+            const btn = document.getElementById('btn-run');
+            btn.disabled = true;
+            document.getElementById('spinner').style.display = 'block';
+            document.getElementById('status-msg').textContent = `⏳ Simulando ${engine} en ${date}...`;
+            document.getElementById('summary-card').style.display = 'none';
+            document.getElementById('hint-no-data').style.display = 'none';
+
+            try {
+                // Load chart candles
+                const [candleResp, simResp] = await Promise.all([
+                    fetch(`${BASE}/api/forex/simulation/candles?date=${date}&index=0`),
+                    fetch(`${BASE}/api/forex/simulation/run?date=${date}&engine_name=${engine}&stake=${stake}&payout=${payout}&duration_candles=${dur}`, { method: 'POST' }),
+                ]);
+
+                const candleData = await candleResp.json();
+                const simData = await simResp.json();
+
+                if (simData.error) {
+                    document.getElementById('status-msg').textContent = '❌ ' + simData.error;
+                    document.getElementById('hint-no-data').style.display = 'block';
+                    return;
+                }
+
+                // Draw candles
+                if (candleData.candles && candleData.candles.length) {
+                    const candles = candleData.candles.filter(d => d.open && d.high && d.low && d.close).map(d => ({
+                        time: d.time, open: +d.open, high: +d.high, low: +d.low, close: +d.close
+                    }));
+                    candleSeries.setData(candles);
+                    ema9s.setData(candleData.candles.filter(d => d.ema_9).map(d => ({ time: d.time, value: +d.ema_9 })));
+                    ema21s.setData(candleData.candles.filter(d => d.ema_21).map(d => ({ time: d.time, value: +d.ema_21 })));
+                    ema50s.setData(candleData.candles.filter(d => d.ema_50).map(d => ({ time: d.time, value: +d.ema_50 })));
+
+                    // Trade markers on chart
+                    const trades = simData.trades || [];
+                    const markers = trades.map(t => {
+                        const candle = candleData.candles[t.candle] || candleData.candles[0];
+                        return {
+                            time: candle ? candle.time : 0,
+                            position: t.direction === 'CALL' ? 'belowBar' : 'aboveBar',
+                            color: t.outcome === 'WIN' ? '#00ffcc' : '#ff4466',
+                            shape: t.direction === 'CALL' ? 'arrowUp' : 'arrowDown',
+                            text: (t.outcome === 'WIN' ? '✓' : '✗') + ' $' + Math.abs(t.pnl).toFixed(0),
+                        };
+                    }).filter(m => m.time > 0);
+                    candleSeries.setMarkers(markers);
+                }
+
+                // Summary
+                const s = simData.summary || {};
+                const wr = (s.win_rate || 0);
+                document.getElementById('s-trades').textContent = s.total_trades || 0;
+                const wrEl = document.getElementById('s-wr');
+                wrEl.textContent = (wr * 100).toFixed(1) + '%';
+                wrEl.className = 'stat-value ' + (wr >= 0.55 ? 'green' : wr < 0.45 ? 'red' : '');
+                const pnlEl = document.getElementById('s-pnl');
+                pnlEl.textContent = (s.total_pnl >= 0 ? '+' : '') + '$' + (s.total_pnl || 0).toFixed(2);
+                pnlEl.className = 'stat-value ' + ((s.total_pnl || 0) >= 0 ? 'green' : 'red');
+                document.getElementById('s-pf').textContent = s.profit_factor || 0;
+                document.getElementById('s-detail').textContent =
+                    `W:${s.wins || 0} L:${s.losses || 0} | Balance final: $${s.final_balance?.toFixed(2) || '—'}`;
+                document.getElementById('summary-card').style.display = 'block';
+
+                // Trade table
+                const trades = simData.trades || [];
+                const tbody = document.getElementById('trade-tbody');
+                if (!trades.length) {
+                    tbody.innerHTML = '<tr><td colspan="8" style="color:var(--muted);padding:10px;">Sin trades — el motor no generó señales en esta fecha</td></tr>';
+                } else {
+                    tbody.innerHTML = trades.map(t => {
+                        const pnlC = t.pnl > 0 ? 'green' : 'red';
+                        return `<tr>
+                    <td>#${t.candle + 1}</td>
+                    <td><span class="badge ${t.direction}">${t.direction}</span></td>
+                    <td>${(+t.entry_price).toFixed(5)}</td>
+                    <td>${(+t.exit_price).toFixed(5)}</td>
+                    <td>${(t.confidence * 100).toFixed(1)}%</td>
+                    <td style="color:var(--${pnlC})">${t.pnl >= 0 ? '+' : ''}$${t.pnl.toFixed(2)}</td>
+                    <td>$${t.balance.toFixed(2)}</td>
+                    <td><span class="badge ${t.outcome}">${t.outcome}</span></td>
+                </tr>`;
+                    }).join('');
+                }
+
+                document.getElementById('status-msg').textContent = `✅ Completado: ${s.total_trades} trades`;
+
+            } catch (e) {
+                console.error(e);
+                document.getElementById('status-msg').textContent = '❌ Error: ' + e.message;
+            } finally {
+                btn.disabled = false;
+                document.getElementById('spinner').style.display = 'none';
+            }
+        }
+
+        loadDates();
+    </script>
+</body>
+
+</html>
